@@ -134,7 +134,7 @@ contract DCTIN is AccessControl {
      * @dev Only addresses with REPORTER_ROLE can call this function
      * @dev Rate limited to MAX_REPORTS_PER_BLOCK per block per reporter
      * @param _threatHash The threat identifier as bytes32 (SHA256 truncated or full)
-     * @param _threatType Category of threat from ThreatType enum
+     * @param _threatTypeRaw Category of threat as uint256 (will be validated against ThreatType enum)
      * 
      * Security:
      * - Rate limiting prevents spam attacks
@@ -144,15 +144,16 @@ contract DCTIN is AccessControl {
      */
     function reportThreat(
         bytes32 _threatHash,
-        ThreatType _threatType
+        uint256 _threatTypeRaw
     ) external onlyRole(REPORTER_ROLE) {
         // Input validation - check for zero hash (saves gas on invalid inputs)
         if (_threatHash == bytes32(0)) revert DCTIN__InvalidThreatHash();
         
-        // Validate threat type enum range
-        if (uint256(_threatType) > uint256(ThreatType.SUSPICIOUS_DOMAIN)) {
+        // Validate threat type enum range before casting
+        if (_threatTypeRaw > uint256(ThreatType.SUSPICIOUS_DOMAIN)) {
             revert DCTIN__InvalidThreatType();
         }
+        ThreatType _threatType = ThreatType(_threatTypeRaw);
         
         // Rate limiting check - prevents spam attacks
         uint256 currentBlock = block.number;

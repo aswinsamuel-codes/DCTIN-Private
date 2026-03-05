@@ -1,4 +1,5 @@
-const { ethers } = require("hardhat");
+import hre from "hardhat";
+import fs from "fs";
 
 /**
  * @title DCTIN Deployment Script
@@ -8,6 +9,8 @@ const { ethers } = require("hardhat");
 
 async function main() {
   console.log("🚀 Starting DCTIN Smart Contract Deployment...\n");
+
+  const { ethers, network } = hre;
 
   // Get the deployer's address
   const [deployer] = await ethers.getSigners();
@@ -64,7 +67,6 @@ async function main() {
   }
 
   // Save deployment to file
-  const fs = require("fs");
   const deploymentsDir = "./deployments";
   
   if (!fs.existsSync(deploymentsDir)) {
