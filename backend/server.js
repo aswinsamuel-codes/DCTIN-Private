@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import threatRoutes from './routes/threatRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,21 +34,30 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/', threatRoutes);
+app.use('/', aiRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'DCTIN Backend API',
-    version: '1.0.0',
+    message: 'DCTIN Backend API with AI Threat Detection',
+    version: '2.0.0',
+    features: ['Blockchain Integration', 'AI Threat Analysis'],
     endpoints: {
+      // Blockchain endpoints
       health: 'GET /health',
       reportThreat: 'POST /report-threat',
       getThreat: 'GET /threat/:hash',
       getThreats: 'GET /threats?page=1&limit=10',
       getReporterThreats: 'GET /reporter/:address',
       checkThreatExists: 'GET /threat-exists/:hash',
-      getStats: 'GET /stats'
+      getStats: 'GET /stats',
+      // AI endpoints
+      analyzeUrl: 'POST /analyze-url',
+      analyzeBatch: 'POST /analyze-urls-batch',
+      reportWithAI: 'POST /report-threat-ai',
+      aiStatus: 'GET /ai-status',
+      aiThreshold: 'PUT /ai-threshold'
     },
     documentation: 'See README.md for full documentation'
   });
@@ -83,13 +93,22 @@ app.listen(PORT, () => {
   console.log(`📋 Contract Address: ${process.env.CONTRACT_ADDRESS || 'Not configured'}`);
   console.log('');
   console.log('Available endpoints:');
+  console.log('');
+  console.log('Blockchain Endpoints:');
   console.log('  GET  /health           - Health check');
-  console.log('  POST /report-threat    - Report new threat');
+  console.log('  POST /report-threat    - Report new threat (legacy)');
+  console.log('  POST /report-threat-ai - Report with AI validation');
   console.log('  GET  /threat/:hash     - Get threat by hash');
   console.log('  GET  /threats          - Get paginated threats');
   console.log('  GET  /reporter/:addr   - Get threats by reporter');
   console.log('  GET  /threat-exists    - Check threat existence');
   console.log('  GET  /stats            - Get statistics');
+  console.log('');
+  console.log('AI Engine Endpoints:');
+  console.log('  POST /analyze-url      - Analyze URL for phishing');
+  console.log('  POST /analyze-urls-batch - Batch URL analysis');
+  console.log('  GET  /ai-status        - AI engine status');
+  console.log('  PUT  /ai-threshold     - Update confidence threshold');
   console.log('');
   
   if (!process.env.CONTRACT_ADDRESS) {
