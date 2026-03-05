@@ -1,0 +1,126 @@
+# DCTIN - Decentralized Cyber Threat Intelligence Network
+# Git Ignore File for Hardhat + Node.js Project
+
+# ============================================
+# Node.js Dependencies
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log*
+
+# ============================================
+# Hardhat Build Outputs
+# ============================================
+artifacts/
+cache/
+typechain/
+typechain-types/
+
+dist/
+build/
+
+# ============================================
+# Test Coverage Reports
+# ============================================
+coverage/
+coverage.json
+.nyc_output/
+*.lcov
+
+# ============================================
+# Environment & Secrets (CRITICAL)
+# ============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Private keys and mnemonics
+*.mnemonic
+*.privatekey
+secrets.json
+
+# API keys and endpoints
+etherscan-api-key.txt
+infura-api-key.txt
+alchemy-api-key.txt
+
+# ============================================
+# IDE & Editor Files
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+.project
+.classpath
+.settings/
+
+# ============================================
+# Operating System Files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Logs
+# ============================================
+logs/
+*.log
+
+# ============================================
+# Temporary Files
+# ============================================
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ============================================
+# Deployment & Network Specific Files
+# ============================================
+deployments/hardhat/
+deployments/localhost/
+
+# ============================================
+# External Binaries & Heavy Files
+# ============================================
+*.appx
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.snap
+
+# Ganache and local blockchain binaries
+Ganache-*
+ganache-*.exe
+ganache-*.appx
+
+# ============================================
+# Documentation Build Outputs
+# ============================================
+docs/_build/
+site/
+
+# ============================================
+# Misc
+# ============================================
+*.bak
+*.orig
+*.rej
+.husky/_
