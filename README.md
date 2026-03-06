@@ -1,19 +1,147 @@
 # DCTIN - Decentralized Cyber Threat Intelligence Network
 
-A secure, gas-optimized Solidity smart contract for storing cyber threat intelligence on the blockchain.
+A secure, gas-optimized Solidity smart contract with AI-powered threat detection for storing cyber threat intelligence on the blockchain.
 
 ## Overview
 
-DCTIN provides an immutable, tamper-proof registry for cyber threat data including malware hashes, malicious IPs, phishing URLs, and attack signatures. The system uses role-based access control to ensure only authorized security researchers can submit threat reports.
+DCTIN provides an immutable, tamper-proof registry for cyber threat data including malware hashes, malicious IPs, phishing URLs, and attack signatures. The system combines:
+
+- **AI Threat Detection Engine** - Automatically analyzes URLs and classifies threats
+- **Blockchain Integration** - Immutable storage on Ethereum-compatible chains
+- **RESTful API** - Easy integration with security tools and SOC workflows
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CLIENT / FRONTEND                         │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   AI THREAT DETECTION ENGINE                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐        │
+│  │   Feature    │───▶│  Classification│───▶│   Threat     │        │
+│  │  Extractor   │    │    Model     │    │   Scoring    │        │
+│  └──────────────┘    └──────────────┘    └──────────────┘        │
+│                                                                  │
+│  • 24+ URL features analyzed                                     │
+│  • Rule-based classifier (ML-ready)                              │
+│  • Confidence threshold: 0.8                                     │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │ Threat Confirmed (>0.8 confidence)
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      BACKEND API (Node.js)                         │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐        │
+│  │   Express    │    │  Blockchain  │    │   ethers.js  │        │
+│  │    Server    │    │   Service    │    │   Contract   │        │
+│  └──────────────┘    └──────────────┘    └──────────────┘        │
+│                                                                  │
+│  Endpoints: /analyze-url, /report-threat-ai, /threats, /stats   │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │ Signed Transaction
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DCTIN SMART CONTRACT                          │
+│                         (Solidity 0.8.19)                        │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │  ThreatRegistry                                          │   │
+│  │  • bytes32 threatHash                                    │   │
+│  │  • address reporter                                      │   │
+│  │  • uint64 timestamp                                      │   │
+│  │  • ThreatType threatType                                 │   │
+│  └────────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Security: AccessControl, Rate Limiting (10/block), ReentrancyGuard│
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    BLOCKCHAIN THREAT REGISTRY                    │
+│                                                                  │
+│  • Immutable threat records                                     │
+│  • Decentralized verification                                   │
+│  • Event logs for audit trail                                   │
+│  • Gas-optimized storage                                        │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Features
 
+- **AI-Powered Detection**: Automatic URL analysis with 24+ threat indicators
 - **Immutable Storage**: Threat reports cannot be deleted or modified once submitted
 - **Role-Based Access Control**: Separate Admin and Reporter roles
 - **Duplicate Prevention**: Automatic detection of existing threat hashes
+- **Rate Limiting**: Protection against spam (10 reports per block per reporter)
 - **Gas Optimized**: Efficient storage layout and O(1) lookups
 - **Event Transparency**: Full audit trail via indexed events
 - **Pagination Support**: Efficient data retrieval for large datasets
+- **RESTful API**: Complete API for integration with security tools
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Git
+
+### Step 1: Start Local Blockchain
+
+```bash
+# From project root
+npx hardhat node
+```
+
+This starts a local Hardhat network at `http://127.0.0.1:8545`.
+
+### Step 2: Deploy Smart Contract
+
+In a new terminal:
+
+```bash
+npx hardhat run scripts/deploy.js --network localhost
+```
+
+Copy the deployed contract address from the output.
+
+### Step 3: Configure Backend
+
+```bash
+cd backend
+npm install
+```
+
+Create `.env` file:
+
+```env
+RPC_URL=http://127.0.0.1:8545
+PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+CONTRACT_ADDRESS=0xYourDeployedContractAddressHere
+PORT=3000
+```
+
+### Step 4: Start Backend
+
+```bash
+npm start
+```
+
+Server starts at `http://localhost:3000`.
+
+### Step 5: Run Demo
+
+```bash
+node backend/demo-run.js
+```
+
+Or run full system tests:
+
+```bash
+node backend/system-test.js
+```
 
 ## Smart Contract Architecture
 

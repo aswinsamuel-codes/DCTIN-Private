@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCTIN - Decentralized Cyber Threat Intelligence</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="shield">🛡️</span>
+        <h1>DCTIN Dashboard</h1>
+      </div>
+      <div class="status">
+        <span id="connection-status" class="badge offline">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="nav">
+      <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+      <button class="nav-btn" data-view="analyzer">URL Analyzer</button>
+      <button class="nav-btn" data-view="explorer">Threat Explorer</button>
+    </nav>
+
+    <!-- Dashboard View -->
+    <section id="dashboard-view" class="view active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h3>Total Threats</h3>
+          <p id="total-threats" class="stat-value">-</p>
+        </div>
+        <div class="stat-card">
+          <h3>Phishing URLs</h3>
+          <p id="phishing-count" class="stat-value">-</p>
+        </div>
+        <div class="stat-card">
+          <h3>Malware Hashes</h3>
+          <p id="malware-count" class="stat-value">-</p>
+        </div>
+        <div class="stat-card">
+          <h3>Active Reporters</h3>
+          <p id="reporter-count" class="stat-value">-</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Latest Threats</h2>
+        <div id="latest-threats" class="threat-list">
+          <p class="loading">Loading...</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>AI Engine Status</h2>
+        <div id="ai-status" class="status-grid">
+          <p class="loading">Loading...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- URL Analyzer View -->
+    <section id="analyzer-view" class="view">
+      <div class="card">
+        <h2>URL Threat Analyzer</h2>
+        <p class="description">Enter a URL to analyze it for phishing threats using AI.</p>
+        
+        <div class="input-group">
+          <input type="url" id="url-input" placeholder="https://example.com or http://suspicious-site.com" class="url-input">
+          <button id="analyze-btn" class="btn primary">Analyze URL</button>
+        </div>
+
+        <div id="analysis-result" class="result-container hidden">
+          <!-- Results will appear here -->
+        </div>
+
+        <div id="blockchain-result" class="blockchain-container hidden">
+          <!-- Blockchain submission result -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Threat Explorer View -->
+    <section id="explorer-view" class="view">
+      <div class="card">
+        <h2>Threat Explorer</h2>
+        <p class="description">Browse all threats recorded on the blockchain.</p>
+        
+        <div class="filters">
+          <select id="type-filter" class="filter-select">
+            <option value="">All Types</option>
+            <option value="0">Malware</option>
+            <option value="1">Phishing URL</option>
+            <option value="2">Malicious IP</option>
+            <option value="3">C2 Server</option>
+            <option value="4">Botnet Node</option>
+            <option value="5">Ransomware</option>
+            <option value="6">Exploit Payload</option>
+            <option value="7">Suspicious Domain</option>
+          </select>
+          <button id="refresh-btn" class="btn secondary">Refresh</button>
+        </div>
+
+        <div id="threats-table-container">
+          <table id="threats-table" class="threats-table">
+            <thead>
+              <tr>
+                <th>Hash</th>
+                <th>Type</th>
+                <th>Reporter</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="threats-tbody">
+              <tr><td colspan="4" class="loading">Loading threats...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <button id="prev-page" class="btn small">Previous</button>
+          <span id="page-info">Page 1</span>
+          <button id="next-page" class="btn small">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>DCTIN - Decentralized Cyber Threat Intelligence Network</p>
+      <p class="small">Connected to blockchain at <span id="contract-addr">-</span></p>
+    </footer>
+  </div>
+
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

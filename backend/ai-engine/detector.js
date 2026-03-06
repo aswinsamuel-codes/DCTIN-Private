@@ -8,7 +8,7 @@ import { classifyURL, getModelInfo, classifyBatch } from './model.js';
 import { ethers } from 'ethers';
 
 // Configuration
-const CONFIDENCE_THRESHOLD = 0.8;
+let CONFIDENCE_THRESHOLD = 0.8;
 
 /**
  * Analyze a URL for phishing threats
@@ -159,7 +159,7 @@ export function getEngineStatus() {
 export function setConfidenceThreshold(newThreshold) {
   if (newThreshold >= 0 && newThreshold <= 1) {
     CONFIDENCE_THRESHOLD = newThreshold;
-    console.log(`[AI ENGINE] Confidence threshold updated to ${newThreshold}`);
+    console.log(`[AI ENGINE] Confidence threshold updated to: ${newThreshold}`);
     return true;
   }
   return false;
