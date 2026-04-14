@@ -1,5 +1,19 @@
 import { analyzeURL, analyzeBatch, validateForReporting, getEngineStatus } from '../ai-engine/detector.js';
 import * as blockchainService from '../services/blockchainService.js';
+import { ethers } from 'ethers';
+
+/**
+ * Map AI confidence score to a ThreatSeverity enum value
+ * 0=LOW (<0.6), 1=MEDIUM (<0.75), 2=HIGH (<0.9), 3=CRITICAL (>=0.9)
+ * @param {number} confidence - 0 to 1 confidence score
+ * @returns {number} Severity enum value
+ */
+function confidenceToSeverity(confidence) {
+  if (confidence >= 0.9) return 3; // CRITICAL
+  if (confidence >= 0.75) return 2; // HIGH
+  if (confidence >= 0.6) return 1;  // MEDIUM
+  return 0;                          // LOW
+}
 
 /**
  * Analyze URL for threats (non-blocking, test endpoint)
@@ -29,6 +43,8 @@ export async function analyzeUrl(req, res) {
         confidence: analysis.confidence,
         type: analysis.type,
         threatType: analysis.threatType,
+        severity: confidenceToSeverity(analysis.confidence),
+        severityName: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'][confidenceToSeverity(analysis.confidence)],
         reasons: analysis.reasons,
         analysisTimeMs: analysis.analysisTimeMs
       },
@@ -139,14 +155,18 @@ export async function reportThreatWithAI(req, res) {
     console.log('[BLOCKCHAIN] Submitting validated threat to blockchain...');
     
     const threatData = validation.valid ? validation.threatData : {
-      hash: require('ethers').id(url),
+      hash: ethers.id(url),
       type: 7, // SUSPICIOUS_DOMAIN
-      originalUrl: url
+      originalUrl: url,
+      confidence: validation.analysis?.confidence || 0
     };
+
+    const severity = confidenceToSeverity(threatData.confidence ?? validation.analysis?.confidence ?? 0);
     
     const result = await blockchainService.reportThreat(
       threatData.hash,
-      threatData.type
+      threatData.type,
+      severity
     );
     
     return res.status(201).json({
@@ -155,6 +175,8 @@ export async function reportThreatWithAI(req, res) {
       aiValidation: {
         passed: validation.valid,
         confidence: validation.analysis?.confidence,
+        severity: severity,
+        severityName: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'][severity],
         reasons: validation.analysis?.reasons
       },
       blockchain: result

@@ -31,21 +31,37 @@ contract DCTIN is AccessControl {
         SUSPICIOUS_DOMAIN  // 7: Suspicious domain
     }
 
+    enum ThreatSeverity {
+        LOW,      // 0: Low severity
+        MEDIUM,   // 1: Medium severity
+        HIGH,     // 2: High severity
+        CRITICAL  // 3: Critical severity
+    }
+
     // ============ Structs ============
     /**
      * @notice Stores all threat report data
-     * @dev MAXIMUM gas optimization - entire struct fits in ONE storage slot
+     * @dev MAXIMUM gas optimization - entire struct fits in TWO storage slots
      * Slot 1: threatHash (32) = 32 bytes
-     * Slot 2: reporter (20) + timestamp (8) + threatType (1) + padding (3) = 32 bytes
-     * 
-     * Total: 2 slots vs 3+ slots with string (dynamic storage)
+     * Slot 2: reporter (20) + timestamp (8) + threatType (1) + severity (1) + padding (2) = 32 bytes
      */
     struct ThreatReport {
-        bytes32 threatHash;    // 32 bytes - Fixed size, no dynamic allocation
-        address reporter;      // 20 bytes
-        uint64 timestamp;      // 8 bytes
-        ThreatType threatType; // 1 byte
-                               // 3 bytes padding
+        bytes32 threatHash;        // 32 bytes - Fixed size, no dynamic allocation
+        address reporter;          // 20 bytes
+        uint64 timestamp;          // 8 bytes
+        ThreatType threatType;     // 1 byte
+        ThreatSeverity severity;   // 1 byte
+                                   // 2 bytes padding
+    }
+
+    /**
+     * @notice Input struct for batch threat reporting
+     * @dev Used as calldata in reportThreatBatch to avoid stack-too-deep
+     */
+    struct ThreatInput {
+        bytes32 threatHash;
+        uint256 threatType;
+        uint256 severity;
     }
 
     // ============ State Variables ============
@@ -69,6 +85,9 @@ contract DCTIN is AccessControl {
     /// @notice Maximum reports per reporter per block (prevents spam)
     uint256 public constant MAX_REPORTS_PER_BLOCK = 10;
     
+    /// @notice Maximum threats allowed in a single batch submission
+    uint256 public constant MAX_BATCH_SIZE = 50;
+    
     /// @notice Tracks reporter submission count per block
     /// @dev Mapping: reporter => blockNumber => count
     mapping(address => mapping(uint256 => uint256)) private _reportsPerBlock;
@@ -84,13 +103,15 @@ contract DCTIN is AccessControl {
      * @param reporter Address that submitted the report (indexed for filtering)
      * @param timestamp Block timestamp of the report
      * @param reportIndex Index in the _threatReports array
+     * @param severity Severity level of the threat
      */
     event ThreatReported(
         bytes32 indexed threatHash,
         ThreatType indexed threatType,
         address indexed reporter,
         uint64 timestamp,
-        uint256 reportIndex
+        uint256 reportIndex,
+        ThreatSeverity severity
     );
 
     /**
@@ -111,10 +132,13 @@ contract DCTIN is AccessControl {
     error DCTIN__ThreatAlreadyExists(bytes32 threatHash);
     error DCTIN__InvalidThreatHash();
     error DCTIN__InvalidThreatType();
+    error DCTIN__InvalidSeverity();
     error DCTIN__NotAuthorizedReporter();
     error DCTIN__ThreatNotFound(bytes32 threatHash);
     error DCTIN__RateLimitExceeded(address reporter, uint256 blockNumber);
     error DCTIN__InvalidPaginationRange();
+    error DCTIN__EmptyBatch();
+    error DCTIN__BatchTooLarge(uint256 provided, uint256 maximum);
 
     // ============ Constructor ============
     /**
@@ -135,6 +159,7 @@ contract DCTIN is AccessControl {
      * @dev Rate limited to MAX_REPORTS_PER_BLOCK per block per reporter
      * @param _threatHash The threat identifier as bytes32 (SHA256 truncated or full)
      * @param _threatTypeRaw Category of threat as uint256 (will be validated against ThreatType enum)
+     * @param _severityRaw Severity level as uint256 (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)
      * 
      * Security:
      * - Rate limiting prevents spam attacks
@@ -144,7 +169,8 @@ contract DCTIN is AccessControl {
      */
     function reportThreat(
         bytes32 _threatHash,
-        uint256 _threatTypeRaw
+        uint256 _threatTypeRaw,
+        uint256 _severityRaw
     ) external onlyRole(REPORTER_ROLE) {
         // Input validation - check for zero hash (saves gas on invalid inputs)
         if (_threatHash == bytes32(0)) revert DCTIN__InvalidThreatHash();
@@ -154,6 +180,12 @@ contract DCTIN is AccessControl {
             revert DCTIN__InvalidThreatType();
         }
         ThreatType _threatType = ThreatType(_threatTypeRaw);
+        
+        // Validate severity enum range before casting
+        if (_severityRaw > uint256(ThreatSeverity.CRITICAL)) {
+            revert DCTIN__InvalidSeverity();
+        }
+        ThreatSeverity _severity = ThreatSeverity(_severityRaw);
         
         // Rate limiting check - prevents spam attacks
         uint256 currentBlock = block.number;
@@ -174,7 +206,8 @@ contract DCTIN is AccessControl {
             threatHash: _threatHash,
             reporter: msg.sender,
             timestamp: uint64(block.timestamp),
-            threatType: _threatType
+            threatType: _threatType,
+            severity: _severity
         });
 
         // Add to array and update mappings
@@ -192,8 +225,77 @@ contract DCTIN is AccessControl {
             _threatType,
             msg.sender,
             uint64(block.timestamp),
-            reportIndex - 1 // Actual array index (0-based)
+            reportIndex - 1, // Actual array index (0-based)
+            _severity
         );
+    }
+
+    /**
+     * @notice Submit multiple threat reports in a single transaction
+     * @dev Gas-efficient bulk submission; rate limiting applies to the total batch size
+     * @dev Only addresses with REPORTER_ROLE can call this function
+     * @param _threats Array of ThreatInput structs (max MAX_BATCH_SIZE)
+     * 
+     * Security:
+     * - Empty batch rejected to prevent wasted gas
+     * - Batch size capped at MAX_BATCH_SIZE (50)
+     * - Rate limiting checks entire batch against remaining quota
+     * - Each item validated individually (hash, type, severity, duplicates)
+     */
+    function reportThreatBatch(
+        ThreatInput[] calldata _threats
+    ) external onlyRole(REPORTER_ROLE) {
+        if (_threats.length == 0) revert DCTIN__EmptyBatch();
+        if (_threats.length > MAX_BATCH_SIZE) {
+            revert DCTIN__BatchTooLarge(_threats.length, MAX_BATCH_SIZE);
+        }
+
+        // Rate limiting: check if entire batch fits within block quota
+        uint256 currentBlock = block.number;
+        uint256 reportsThisBlock = _reportsPerBlock[msg.sender][currentBlock];
+        if (reportsThisBlock + _threats.length > MAX_REPORTS_PER_BLOCK) {
+            emit RateLimitExceeded(msg.sender, currentBlock, reportsThisBlock + _threats.length);
+            revert DCTIN__RateLimitExceeded(msg.sender, currentBlock);
+        }
+
+        uint64 timestamp = uint64(block.timestamp);
+
+        for (uint256 i = 0; i < _threats.length; i++) {
+            ThreatInput calldata input = _threats[i];
+
+            // Per-item validation
+            if (input.threatHash == bytes32(0)) revert DCTIN__InvalidThreatHash();
+            if (input.threatType > uint256(ThreatType.SUSPICIOUS_DOMAIN)) revert DCTIN__InvalidThreatType();
+            if (input.severity > uint256(ThreatSeverity.CRITICAL)) revert DCTIN__InvalidSeverity();
+            if (_hashToIndex[input.threatHash] != 0) revert DCTIN__ThreatAlreadyExists(input.threatHash);
+
+            ThreatType threatType = ThreatType(input.threatType);
+            ThreatSeverity severity = ThreatSeverity(input.severity);
+
+            ThreatReport memory newReport = ThreatReport({
+                threatHash: input.threatHash,
+                reporter: msg.sender,
+                timestamp: timestamp,
+                threatType: threatType,
+                severity: severity
+            });
+
+            _threatReports.push(newReport);
+            uint256 reportIndex = _threatReports.length; // 1-based index for mapping
+            _hashToIndex[input.threatHash] = reportIndex;
+
+            emit ThreatReported(
+                input.threatHash,
+                threatType,
+                msg.sender,
+                timestamp,
+                reportIndex - 1,
+                severity
+            );
+        }
+
+        // Update rate limit counter once for the entire batch
+        _reportsPerBlock[msg.sender][currentBlock] = reportsThisBlock + _threats.length;
     }
 
     /**

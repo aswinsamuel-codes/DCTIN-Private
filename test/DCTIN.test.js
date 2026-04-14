@@ -19,6 +19,14 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
     SUSPICIOUS_DOMAIN: 7
   };
 
+  // Severity enum values
+  const ThreatSeverity = {
+    LOW: 0,
+    MEDIUM: 1,
+    HIGH: 2,
+    CRITICAL: 3
+  };
+
   // Sample threat hashes as bytes32
   const sampleThreatHash = ethers.id("malware_sample_1"); // keccak256 hash
   const sampleThreatHash2 = ethers.id("phishing_url_sample_1");
@@ -48,7 +56,7 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
 
   describe("Threat Reporting (bytes32)", function () {
     it("Should allow reporter to submit a threat with bytes32 hash", async function () {
-      const tx = await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE);
+      const tx = await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.HIGH);
       const receipt = await tx.wait();
       
       expect(await dctin.getTotalThreats()).to.equal(1);
@@ -61,43 +69,49 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       expect(event).to.not.be.undefined;
     });
 
-    it("Should store correct threat data with bytes32", async function () {
-      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE);
+    it("Should store correct threat data with bytes32 and severity", async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.CRITICAL);
       
       const threat = await dctin.getThreatByHash(sampleThreatHash);
       expect(threat.threatHash).to.equal(sampleThreatHash);
       expect(threat.threatType).to.equal(ThreatType.MALWARE);
+      expect(threat.severity).to.equal(ThreatSeverity.CRITICAL);
       expect(threat.reporter).to.equal(owner.address);
     });
 
     it("Should prevent duplicate bytes32 threat hashes", async function () {
-      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE);
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.LOW);
       
-      await expect(dctin.reportThreat(sampleThreatHash, ThreatType.RANSOMWARE))
+      await expect(dctin.reportThreat(sampleThreatHash, ThreatType.RANSOMWARE, ThreatSeverity.LOW))
         .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatAlreadyExists")
         .withArgs(sampleThreatHash);
     });
 
     it("Should prevent zero bytes32 hash", async function () {
       const zeroHash = ethers.ZeroHash; // bytes32(0)
-      await expect(dctin.reportThreat(zeroHash, ThreatType.MALWARE))
+      await expect(dctin.reportThreat(zeroHash, ThreatType.MALWARE, ThreatSeverity.LOW))
         .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatHash");
     });
 
     it("Should prevent invalid threat type", async function () {
-      await expect(dctin.reportThreat(sampleThreatHash, 8))
+      await expect(dctin.reportThreat(sampleThreatHash, 8, ThreatSeverity.LOW))
         .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatType");
+    });
+
+    it("Should prevent invalid severity", async function () {
+      await expect(dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, 4))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidSeverity");
     });
 
     it("Should reject unauthorized reporters", async function () {
       await expect(
-        dctin.connect(unauthorized).reportThreat(sampleThreatHash, ThreatType.MALWARE)
+        dctin.connect(unauthorized).reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.LOW)
       ).to.be.reverted;
     });
 
     it("Should allow multiple unique bytes32 threats from same reporter", async function () {
-      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE);
-      await dctin.reportThreat(sampleThreatHash2, ThreatType.PHISHING_URL);
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.HIGH);
+      await dctin.reportThreat(sampleThreatHash2, ThreatType.PHISHING_URL, ThreatSeverity.MEDIUM);
       
       expect(await dctin.getTotalThreats()).to.equal(2);
       
@@ -130,7 +144,7 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       await dctin.addReporter(reporter1.address);
       
       await expect(
-        dctin.connect(reporter1).reportThreat(sampleThreatHash, ThreatType.MALWARE)
+        dctin.connect(reporter1).reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.LOW)
       ).to.not.be.reverted;
     });
 
@@ -145,7 +159,7 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       await dctin.removeReporter(reporter1.address);
       
       await expect(
-        dctin.connect(reporter1).reportThreat(sampleThreatHash, ThreatType.MALWARE)
+        dctin.connect(reporter1).reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.LOW)
       ).to.be.reverted;
     });
   });
@@ -156,7 +170,7 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       // Rate limiting is per-block, so test verifies the contract has proper rate limit state
       
       // Submit report and verify it works
-      await dctin.reportThreat(ethers.id("rate_limit_1"), ThreatType.MALWARE);
+      await dctin.reportThreat(ethers.id("rate_limit_1"), ThreatType.MALWARE, ThreatSeverity.LOW);
       expect(await dctin.getTotalThreats()).to.equal(1);
       
       // The contract logic is correct - rate limit counter tracks per reporter per block
@@ -165,8 +179,8 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
 
     it("Should reset rate limit in new block", async function () {
       // Submit 2 reports (each in separate block due to auto-mining)
-      await dctin.reportThreat(ethers.id("block_reset_1"), ThreatType.MALWARE);
-      await dctin.reportThreat(ethers.id("block_reset_2"), ThreatType.MALWARE);
+      await dctin.reportThreat(ethers.id("block_reset_1"), ThreatType.MALWARE, ThreatSeverity.LOW);
+      await dctin.reportThreat(ethers.id("block_reset_2"), ThreatType.MALWARE, ThreatSeverity.LOW);
       
       // With auto-mining, rate limit resets each block, so both succeed
       expect(await dctin.getTotalThreats()).to.equal(2);
@@ -176,12 +190,12 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       await dctin.addReporter(reporter1.address);
       
       // Owner submits 2 reports
-      await dctin.reportThreat(ethers.id("owner_rl_1"), ThreatType.MALWARE);
-      await dctin.reportThreat(ethers.id("owner_rl_2"), ThreatType.MALWARE);
+      await dctin.reportThreat(ethers.id("owner_rl_1"), ThreatType.MALWARE, ThreatSeverity.HIGH);
+      await dctin.reportThreat(ethers.id("owner_rl_2"), ThreatType.MALWARE, ThreatSeverity.HIGH);
       
       // Reporter1 submits 2 reports
-      await dctin.connect(reporter1).reportThreat(ethers.id("r1_rl_1"), ThreatType.PHISHING_URL);
-      await dctin.connect(reporter1).reportThreat(ethers.id("r1_rl_2"), ThreatType.PHISHING_URL);
+      await dctin.connect(reporter1).reportThreat(ethers.id("r1_rl_1"), ThreatType.PHISHING_URL, ThreatSeverity.MEDIUM);
+      await dctin.connect(reporter1).reportThreat(ethers.id("r1_rl_2"), ThreatType.PHISHING_URL, ThreatSeverity.MEDIUM);
       
       // Verify both reporters' submissions
       expect(await dctin.getThreatsByReporter(owner.address)).to.have.length(2);
@@ -201,7 +215,7 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
     beforeEach(async function () {
       // Seed with 5 threats for query tests
       for (let i = 0; i < 5; i++) {
-        await dctin.reportThreat(ethers.id(`query_seed_${i}`), ThreatType.MALWARE);
+        await dctin.reportThreat(ethers.id(`query_seed_${i}`), ThreatType.MALWARE, ThreatSeverity.LOW);
       }
     });
 
@@ -275,29 +289,45 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       
       for (let i = 0; i < threatTypes.length; i++) {
         const hash = ethers.id(`edge_case_type_${i}`);
-        await expect(dctin.reportThreat(hash, i)).to.not.be.reverted;
+        await expect(dctin.reportThreat(hash, i, ThreatSeverity.LOW)).to.not.be.reverted;
       }
       
       expect(await dctin.getTotalThreats()).to.equal(threatTypes.length);
     });
 
+    it("Should handle all valid severity enum values", async function () {
+      const severities = Object.values(ThreatSeverity).filter(v => typeof v === 'number');
+      
+      for (let i = 0; i < severities.length; i++) {
+        const hash = ethers.id(`edge_case_severity_${i}`);
+        await expect(dctin.reportThreat(hash, ThreatType.MALWARE, i)).to.not.be.reverted;
+        const threat = await dctin.getThreatByHash(hash);
+        expect(threat.severity).to.equal(i);
+      }
+    });
+
     it("Should revert on invalid threat type (8)", async function () {
-      await expect(dctin.reportThreat(ethers.id("invalid_type"), 8))
+      await expect(dctin.reportThreat(ethers.id("invalid_type"), 8, ThreatSeverity.LOW))
         .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatType");
     });
 
     it("Should revert on very large invalid threat type (255)", async function () {
-      await expect(dctin.reportThreat(ethers.id("large_invalid_type"), 255))
+      await expect(dctin.reportThreat(ethers.id("large_invalid_type"), 255, ThreatSeverity.LOW))
         .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatType");
+    });
+
+    it("Should revert on invalid severity (4)", async function () {
+      await expect(dctin.reportThreat(ethers.id("invalid_severity"), ThreatType.MALWARE, 4))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidSeverity");
     });
 
     it("Should prevent duplicate submission even with different threat types", async function () {
       const hash = ethers.id("duplicate_across_types");
       
-      await dctin.reportThreat(hash, ThreatType.MALWARE);
+      await dctin.reportThreat(hash, ThreatType.MALWARE, ThreatSeverity.LOW);
       
       // Same hash, different type should still fail
-      await expect(dctin.reportThreat(hash, ThreatType.PHISHING_URL))
+      await expect(dctin.reportThreat(hash, ThreatType.PHISHING_URL, ThreatSeverity.LOW))
         .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatAlreadyExists")
         .withArgs(hash);
     });
@@ -306,7 +336,7 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       const totalBefore = await dctin.totalThreats();
       expect(totalBefore).to.equal(0);
       
-      await dctin.reportThreat(ethers.id("view_test_1"), ThreatType.MALWARE);
+      await dctin.reportThreat(ethers.id("view_test_1"), ThreatType.MALWARE, ThreatSeverity.LOW);
       
       const totalAfter = await dctin.totalThreats();
       expect(totalAfter).to.equal(1);
@@ -322,12 +352,138 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       
       // Each reporter submits 3 threats
       for (let i = 0; i < 3; i++) {
-        await dctin.reportThreat(ethers.id(`owner_multi_${i}`), ThreatType.MALWARE);
-        await dctin.connect(reporter1).reportThreat(ethers.id(`r1_multi_${i}`), ThreatType.PHISHING_URL);
-        await dctin.connect(reporter2).reportThreat(ethers.id(`r2_multi_${i}`), ThreatType.C2_SERVER);
+        await dctin.reportThreat(ethers.id(`owner_multi_${i}`), ThreatType.MALWARE, ThreatSeverity.HIGH);
+        await dctin.connect(reporter1).reportThreat(ethers.id(`r1_multi_${i}`), ThreatType.PHISHING_URL, ThreatSeverity.MEDIUM);
+        await dctin.connect(reporter2).reportThreat(ethers.id(`r2_multi_${i}`), ThreatType.C2_SERVER, ThreatSeverity.CRITICAL);
       }
       
       expect(await dctin.getTotalThreats()).to.equal(9);
+    });
+  });
+
+  describe("Batch Reporting", function () {
+    it("Should allow reporter to submit a batch of threats", async function () {
+      const batch = [
+        { threatHash: ethers.id("batch_1"), threatType: ThreatType.MALWARE, severity: ThreatSeverity.HIGH },
+        { threatHash: ethers.id("batch_2"), threatType: ThreatType.PHISHING_URL, severity: ThreatSeverity.CRITICAL },
+        { threatHash: ethers.id("batch_3"), threatType: ThreatType.MALICIOUS_IP, severity: ThreatSeverity.MEDIUM }
+      ];
+      
+      await dctin.reportThreatBatch(batch);
+      
+      expect(await dctin.getTotalThreats()).to.equal(3);
+      expect(await dctin.threatExists(batch[0].threatHash)).to.be.true;
+      expect(await dctin.threatExists(batch[1].threatHash)).to.be.true;
+      expect(await dctin.threatExists(batch[2].threatHash)).to.be.true;
+    });
+
+    it("Should store correct severity for each batch item", async function () {
+      const batch = [
+        { threatHash: ethers.id("sev_batch_1"), threatType: ThreatType.RANSOMWARE, severity: ThreatSeverity.CRITICAL },
+        { threatHash: ethers.id("sev_batch_2"), threatType: ThreatType.SUSPICIOUS_DOMAIN, severity: ThreatSeverity.LOW }
+      ];
+      
+      await dctin.reportThreatBatch(batch);
+      
+      const threat1 = await dctin.getThreatByHash(batch[0].threatHash);
+      expect(threat1.severity).to.equal(ThreatSeverity.CRITICAL);
+      
+      const threat2 = await dctin.getThreatByHash(batch[1].threatHash);
+      expect(threat2.severity).to.equal(ThreatSeverity.LOW);
+    });
+
+    it("Should revert on empty batch", async function () {
+      await expect(dctin.reportThreatBatch([]))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__EmptyBatch");
+    });
+
+    it("Should revert when batch exceeds MAX_BATCH_SIZE (50)", async function () {
+      const batch = Array.from({ length: 51 }, (_, i) => ({
+        threatHash: ethers.id(`over_batch_${i}`),
+        threatType: ThreatType.MALWARE,
+        severity: ThreatSeverity.LOW
+      }));
+      
+      await expect(dctin.reportThreatBatch(batch))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__BatchTooLarge")
+        .withArgs(51, 50);
+    });
+
+    it("Should revert if any item in batch has invalid threat type", async function () {
+      const batch = [
+        { threatHash: ethers.id("valid_batch_item"), threatType: ThreatType.MALWARE, severity: ThreatSeverity.LOW },
+        { threatHash: ethers.id("invalid_batch_item"), threatType: 8, severity: ThreatSeverity.LOW }
+      ];
+      
+      await expect(dctin.reportThreatBatch(batch))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatType");
+    });
+
+    it("Should revert if any item in batch has invalid severity", async function () {
+      const batch = [
+        { threatHash: ethers.id("valid_sev_item"), threatType: ThreatType.MALWARE, severity: ThreatSeverity.HIGH },
+        { threatHash: ethers.id("invalid_sev_item"), threatType: ThreatType.MALWARE, severity: 4 }
+      ];
+      
+      await expect(dctin.reportThreatBatch(batch))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidSeverity");
+    });
+
+    it("Should revert if any item in batch has zero hash", async function () {
+      const batch = [
+        { threatHash: ethers.id("ok_hash"), threatType: ThreatType.MALWARE, severity: ThreatSeverity.LOW },
+        { threatHash: ethers.ZeroHash, threatType: ThreatType.MALWARE, severity: ThreatSeverity.LOW }
+      ];
+      
+      await expect(dctin.reportThreatBatch(batch))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatHash");
+    });
+
+    it("Should revert if batch contains duplicate hash (within batch)", async function () {
+      const hash = ethers.id("dup_in_batch");
+      const batch = [
+        { threatHash: hash, threatType: ThreatType.MALWARE, severity: ThreatSeverity.LOW },
+        { threatHash: hash, threatType: ThreatType.PHISHING_URL, severity: ThreatSeverity.HIGH }
+      ];
+      
+      await expect(dctin.reportThreatBatch(batch))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatAlreadyExists")
+        .withArgs(hash);
+    });
+
+    it("Should revert if batch contains hash already on chain", async function () {
+      const existingHash = ethers.id("pre_existing_hash");
+      await dctin.reportThreat(existingHash, ThreatType.MALWARE, ThreatSeverity.LOW);
+      
+      const batch = [
+        { threatHash: ethers.id("new_hash_in_batch"), threatType: ThreatType.RANSOMWARE, severity: ThreatSeverity.MEDIUM },
+        { threatHash: existingHash, threatType: ThreatType.MALWARE, severity: ThreatSeverity.LOW }
+      ];
+      
+      await expect(dctin.reportThreatBatch(batch))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatAlreadyExists")
+        .withArgs(existingHash);
+    });
+
+    it("Should reject unauthorized reporter attempting batch submission", async function () {
+      const batch = [
+        { threatHash: ethers.id("unauth_batch"), threatType: ThreatType.MALWARE, severity: ThreatSeverity.LOW }
+      ];
+      
+      await expect(dctin.connect(unauthorized).reportThreatBatch(batch))
+        .to.be.reverted;
+    });
+
+    it("Should correctly count batch size against rate limit", async function () {
+      const maxBatch = Array.from({ length: 10 }, (_, i) => ({
+        threatHash: ethers.id(`rate_batch_${i}`),
+        threatType: ThreatType.MALWARE,
+        severity: ThreatSeverity.LOW
+      }));
+      
+      // Should succeed with exactly MAX_REPORTS_PER_BLOCK items (rate limit reset each block)
+      await expect(dctin.reportThreatBatch(maxBatch)).to.not.be.reverted;
+      expect(await dctin.getTotalThreats()).to.equal(10);
     });
   });
 });

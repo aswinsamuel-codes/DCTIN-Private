@@ -86,6 +86,14 @@ async function checkThreatExists(hash) {
   return apiRequest(`/threat-exists/${hash}`);
 }
 
+/**
+ * Report multiple threats in a single blockchain transaction
+ * @param {Array<{hash: string, type: number, severity?: number}>} threats
+ */
+async function reportThreatBatch(threats) {
+  return apiRequest('/report-threat-batch', 'POST', { threats });
+}
+
 // Export API functions
 window.DCTIN_API = {
   checkHealth,
@@ -95,5 +103,6 @@ window.DCTIN_API = {
   analyzeUrl,
   reportThreatAI,
   getAIStatus,
-  checkThreatExists
+  checkThreatExists,
+  reportThreatBatch
 };

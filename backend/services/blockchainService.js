@@ -2,12 +2,47 @@ import { getContract, getWallet } from '../config/blockchain.js';
 import { ethers } from 'ethers';
 
 /**
+ * Severity enum values matching the smart contract
+ */
+const SEVERITY_NAMES = {
+  0: 'LOW',
+  1: 'MEDIUM',
+  2: 'HIGH',
+  3: 'CRITICAL'
+};
+
+/**
+ * Threat type names matching the smart contract enum
+ */
+function getThreatTypeName(type) {
+  const types = {
+    0: 'MALWARE',
+    1: 'PHISHING_URL',
+    2: 'MALICIOUS_IP',
+    3: 'C2_SERVER',
+    4: 'BOTNET_NODE',
+    5: 'RANSOMWARE',
+    6: 'EXPLOIT_PAYLOAD',
+    7: 'SUSPICIOUS_DOMAIN'
+  };
+  return types[type] || 'UNKNOWN';
+}
+
+/**
+ * Severity name from enum value
+ */
+function getSeverityName(severity) {
+  return SEVERITY_NAMES[severity] || 'UNKNOWN';
+}
+
+/**
  * Report a new threat to the blockchain
  * @param {string} hash - bytes32 threat hash (0x... format)
  * @param {number} type - Threat type enum value (0-7)
+ * @param {number} severity - Severity level (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)
  * @returns {Promise<Object>} Transaction receipt and threat details
  */
-export async function reportThreat(hash, type) {
+export async function reportThreat(hash, type, severity = 0) {
   try {
     const contract = getContract();
     const wallet = getWallet();
@@ -21,15 +56,20 @@ export async function reportThreat(hash, type) {
     if (typeof type !== 'number' || type < 0 || type > 7) {
       throw new Error('Invalid threat type. Expected integer 0-7');
     }
+
+    // Validate severity range
+    if (typeof severity !== 'number' || severity < 0 || severity > 3) {
+      throw new Error('Invalid severity. Expected integer 0-3 (LOW, MEDIUM, HIGH, CRITICAL)');
+    }
     
     // Convert to bytes32 if needed
     const bytes32Hash = hash.startsWith('0x') ? hash : `0x${hash}`;
     
-    console.log(`📤 Reporting threat - Hash: ${bytes32Hash}, Type: ${type}`);
+    console.log(`📤 Reporting threat - Hash: ${bytes32Hash}, Type: ${type}, Severity: ${getSeverityName(severity)}`);
     console.log(`👤 Reporter: ${wallet.address}`);
     
     // Send transaction
-    const tx = await contract.reportThreat(bytes32Hash, type);
+    const tx = await contract.reportThreat(bytes32Hash, type, severity);
     
     console.log(`⏳ Transaction sent: ${tx.hash}`);
     console.log(`⛽ Gas limit: ${tx.gasLimit.toString()}`);
@@ -67,6 +107,9 @@ export async function reportThreat(hash, type) {
       gasUsed: receipt.gasUsed.toString(),
       threatHash: bytes32Hash,
       threatType: type,
+      threatTypeName: getThreatTypeName(type),
+      severity: severity,
+      severityName: getSeverityName(severity),
       threatIndex: threatIndex,
       reporter: wallet.address
     };
@@ -86,6 +129,9 @@ export async function reportThreat(hash, type) {
       if (errorMessage?.includes('DCTIN__InvalidThreatHash')) {
         throw new Error('INVALID_HASH: Threat hash cannot be zero');
       }
+      if (errorMessage?.includes('DCTIN__InvalidSeverity')) {
+        throw new Error('INVALID_SEVERITY: Severity must be between 0 and 3');
+      }
       if (errorMessage?.includes('DCTIN__RateLimitExceeded')) {
         throw new Error('RATE_LIMIT_EXCEEDED: Maximum reports per block reached (10)');
       }
@@ -97,6 +143,86 @@ export async function reportThreat(hash, type) {
     }
     
     console.error('❌ Error reporting threat:', error);
+    throw error;
+  }
+}
+
+/**
+ * Report multiple threats in a single blockchain transaction (batch)
+ * @param {Array<{hash: string, type: number, severity: number}>} threats - Array of threat objects
+ * @returns {Promise<Object>} Transaction receipt and summary
+ */
+export async function reportThreatBatch(threats) {
+  try {
+    const contract = getContract();
+    const wallet = getWallet();
+
+    if (!Array.isArray(threats) || threats.length === 0) {
+      throw new Error('EMPTY_BATCH: threats array must not be empty');
+    }
+    if (threats.length > 50) {
+      throw new Error('BATCH_TOO_LARGE: Maximum batch size is 50');
+    }
+
+    // Validate and transform each item
+    const batchInput = threats.map((t, i) => {
+      if (!t.hash || !ethers.isHexString(t.hash) || t.hash.length !== 66) {
+        throw new Error(`Invalid hash at index ${i}. Expected 32-byte hex string`);
+      }
+      if (typeof t.type !== 'number' || t.type < 0 || t.type > 7) {
+        throw new Error(`Invalid type at index ${i}. Expected integer 0-7`);
+      }
+      const severity = typeof t.severity === 'number' ? t.severity : 0;
+      if (severity < 0 || severity > 3) {
+        throw new Error(`Invalid severity at index ${i}. Expected integer 0-3`);
+      }
+      return {
+        threatHash: t.hash.startsWith('0x') ? t.hash : `0x${t.hash}`,
+        threatType: t.type,
+        severity: severity
+      };
+    });
+
+    console.log(`📦 Batch reporting ${batchInput.length} threats`);
+    console.log(`👤 Reporter: ${wallet.address}`);
+
+    const tx = await contract.reportThreatBatch(batchInput);
+    console.log(`⏳ Batch transaction sent: ${tx.hash}`);
+
+    const receipt = await tx.wait();
+    console.log(`✅ Batch confirmed in block ${receipt.blockNumber}`);
+    console.log(`🔢 Gas used: ${receipt.gasUsed.toString()}`);
+
+    return {
+      success: true,
+      transactionHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed.toString(),
+      count: batchInput.length,
+      reporter: wallet.address
+    };
+
+  } catch (error) {
+    if (error.code === 'CALL_EXCEPTION' || error.code === 'ACTION_REJECTED') {
+      const errorMessage = error.reason || error.shortMessage || error.message;
+
+      if (errorMessage?.includes('DCTIN__ThreatAlreadyExists')) {
+        throw new Error('DUPLICATE_THREAT: One or more threat hashes already reported');
+      }
+      if (errorMessage?.includes('DCTIN__EmptyBatch')) {
+        throw new Error('EMPTY_BATCH: Batch cannot be empty');
+      }
+      if (errorMessage?.includes('DCTIN__BatchTooLarge')) {
+        throw new Error('BATCH_TOO_LARGE: Maximum batch size is 50');
+      }
+      if (errorMessage?.includes('DCTIN__RateLimitExceeded')) {
+        throw new Error('RATE_LIMIT_EXCEEDED: Batch exceeds rate limit for this block');
+      }
+
+      throw new Error(`CONTRACT_ERROR: ${errorMessage}`);
+    }
+
+    console.error('❌ Error in batch report:', error);
     throw error;
   }
 }
@@ -127,7 +253,9 @@ export async function getThreatByHash(hash) {
       reporter: threat.reporter,
       timestamp: new Date(Number(threat.timestamp) * 1000).toISOString(),
       threatType: Number(threat.threatType),
-      threatTypeName: getThreatTypeName(Number(threat.threatType))
+      threatTypeName: getThreatTypeName(Number(threat.threatType)),
+      severity: Number(threat.severity),
+      severityName: getSeverityName(Number(threat.severity))
     };
     
   } catch (error) {
@@ -143,7 +271,7 @@ export async function getThreatByHash(hash) {
  * Get threats with pagination
  * @param {number} start - Starting index
  * @param {number} count - Number of threats to fetch
- * @returns {Promise<Object>} Paginated threats
+ * @returns {Promise<Object>} Paginated threats with total count
  */
 export async function getThreatsPaginated(start, count) {
   try {
@@ -159,7 +287,10 @@ export async function getThreatsPaginated(start, count) {
     
     console.log(`📄 Fetching threats - Start: ${start}, Count: ${count}`);
     
-    const threats = await contract.getThreatsPaginated(start, count);
+    const [threats, total] = await Promise.all([
+      contract.getThreatsPaginated(start, count),
+      contract.getTotalThreats()
+    ]);
     
     // Format threats
     const formattedThreats = threats.map(threat => ({
@@ -167,13 +298,16 @@ export async function getThreatsPaginated(start, count) {
       reporter: threat.reporter,
       timestamp: new Date(Number(threat.timestamp) * 1000).toISOString(),
       threatType: Number(threat.threatType),
-      threatTypeName: getThreatTypeName(Number(threat.threatType))
+      threatTypeName: getThreatTypeName(Number(threat.threatType)),
+      severity: Number(threat.severity),
+      severityName: getSeverityName(Number(threat.severity))
     }));
     
     return {
       success: true,
       threats: formattedThreats,
       count: formattedThreats.length,
+      total: Number(total),
       startIndex: start
     };
     
@@ -214,7 +348,9 @@ export async function getThreatsByReporter(address) {
           reporter: threat.reporter,
           timestamp: new Date(Number(threat.timestamp) * 1000).toISOString(),
           threatType: Number(threat.threatType),
-          threatTypeName: getThreatTypeName(Number(threat.threatType))
+          threatTypeName: getThreatTypeName(Number(threat.threatType)),
+          severity: Number(threat.severity),
+          severityName: getSeverityName(Number(threat.severity))
         });
       } catch (e) {
         console.warn(`Failed to fetch threat details for ${hash}:`, e.message);
@@ -263,8 +399,8 @@ export async function threatExists(hash) {
 }
 
 /**
- * Get total number of threats
- * @returns {Promise<Object>} Total threats count
+ * Get total number of threats and per-type counts
+ * @returns {Promise<Object>} Total threats and stats
  */
 export async function getTotalThreats() {
   try {
@@ -280,23 +416,4 @@ export async function getTotalThreats() {
     console.error('❌ Error fetching total threats:', error);
     throw error;
   }
-}
-
-/**
- * Get threat type name from enum value
- * @param {number} type - Threat type enum value
- * @returns {string} Human-readable threat type name
- */
-function getThreatTypeName(type) {
-  const types = {
-    0: 'MALWARE',
-    1: 'PHISHING_URL',
-    2: 'C2_SERVER',
-    3: 'DATA_EXFILTRATION',
-    4: 'RANSOMWARE',
-    5: 'BOTNET_NODE',
-    6: 'ANOMALOUS_BEHAVIOR',
-    7: 'SUSPICIOUS_DOMAIN'
-  };
-  return types[type] || 'UNKNOWN';
 }

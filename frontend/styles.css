@@ -496,7 +496,23 @@ body {
   font-size: 12px;
 }
 
-/* Filters */
+/* Severity Badges */
+.severity-badge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.sev-0 { background: #d1fae5; color: #065f46; }   /* LOW - green */
+.sev-1 { background: #fef3c7; color: #92400e; }   /* MEDIUM - amber */
+.sev-2 { background: #fed7aa; color: #9a3412; }   /* HIGH - orange */
+.sev-3 { background: #fecaca; color: #7f1d1d; }   /* CRITICAL - red */
+
+
 .filters {
   display: flex;
   gap: 12px;

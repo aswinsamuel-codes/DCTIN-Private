@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   reportThreat,
+  reportThreatBatch,
   getThreatByHash,
   getThreatsPaginated,
   getThreatsByReporter,
@@ -13,9 +14,16 @@ const router = express.Router();
 /**
  * @route   POST /report-threat
  * @desc    Report a new threat to the blockchain
- * @body    { hash: string, type: number }
+ * @body    { hash: string, type: number, severity?: number }
  */
 router.post('/report-threat', reportThreat);
+
+/**
+ * @route   POST /report-threat-batch
+ * @desc    Report multiple threats in a single blockchain transaction
+ * @body    { threats: Array<{ hash: string, type: number, severity?: number }> }
+ */
+router.post('/report-threat-batch', reportThreatBatch);
 
 /**
  * @route   GET /threat/:hash
