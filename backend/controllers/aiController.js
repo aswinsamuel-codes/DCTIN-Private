@@ -154,14 +154,16 @@ export async function reportThreatWithAI(req, res) {
     // Step 3: Submit to blockchain
     console.log('[BLOCKCHAIN] Submitting validated threat to blockchain...');
     
+    // Derive confidence: use threatData.confidence if valid, otherwise fall back to analysis confidence
+    const analysisConfidence = validation.analysis?.confidence ?? 0;
     const threatData = validation.valid ? validation.threatData : {
       hash: ethers.id(url),
       type: 7, // SUSPICIOUS_DOMAIN
       originalUrl: url,
-      confidence: validation.analysis?.confidence || 0
+      confidence: analysisConfidence
     };
 
-    const severity = confidenceToSeverity(threatData.confidence ?? validation.analysis?.confidence ?? 0);
+    const severity = confidenceToSeverity(threatData.confidence ?? 0);
     
     const result = await blockchainService.reportThreat(
       threatData.hash,

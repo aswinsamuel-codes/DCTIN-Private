@@ -427,7 +427,7 @@ async function exportThreatsCSV() {
       t.severity ?? 0,
       SEVERITY_NAMES[t.severity ?? 0] || 'Low',
       t.reporter,
-      t.timestamp || formatTimestamp(t.timestamp)
+      t.timestamp ? new Date(t.timestamp).toLocaleString() : 'N/A'
     ]);
 
     const csvContent = [headers, ...rows]
