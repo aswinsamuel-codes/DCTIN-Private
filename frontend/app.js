@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAnalyzer();
   initExplorer();
   initSearch();
+  initAnalytics();
   loadDashboardData();
   checkConnection();
 });
@@ -70,6 +71,7 @@ function initNavigation() {
       // Refresh data when switching views
       if (viewName === 'dashboard') loadDashboardData();
       if (viewName === 'explorer') loadThreats();
+      if (viewName === 'analytics') loadAnalytics();
     });
   });
 }
@@ -543,14 +545,23 @@ async function searchByHash(hash) {
           <p><strong>Status:</strong> ${t.statusName || STATUS_NAMES[t.status ?? 0] || 'Active'}</p>
           <p><strong>Reporter:</strong> <span class="mono">${t.reporter}</span></p>
           <p><strong>Reported At:</strong> ${new Date(t.timestamp).toLocaleString()}</p>
+          <p><strong>Confirmations:</strong> <span id="confirm-count">loading…</span></p>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn confirm" onclick="confirmThreatUI('${t.threatHash}')">✔ Confirm Threat</button>
           <button class="btn secondary" onclick="changeStatus('${t.threatHash}', 0)">Mark Active</button>
           <button class="btn secondary" onclick="changeStatus('${t.threatHash}', 1)">Mark Resolved</button>
           <button class="btn secondary" onclick="changeStatus('${t.threatHash}', 2)">Mark Disputed</button>
         </div>
       </div>
     `;
+
+    // Asynchronously populate the confirmation count
+    DCTIN_API.getConfirmationCount(t.threatHash).then(cr => {
+      const el = document.getElementById('confirm-count');
+      if (el) el.textContent = cr.success ? cr.data?.confirmations ?? 0 : 'N/A';
+    });
+
   } else if (result.status === 404) {
     resultContainer.innerHTML = `
       <div class="success-box">
@@ -597,6 +608,140 @@ async function changeStatus(hash, status) {
   if (result.success) {
     setTimeout(() => searchByHash(hash), SEARCH_REFRESH_DELAY);
   }
+}
+
+// Confirm a threat from the Hash Search panel
+async function confirmThreatUI(hash) {
+  const resultContainer = document.getElementById('search-result');
+
+  const existing = resultContainer.querySelector('.confirm-msg');
+  if (existing) existing.remove();
+
+  const msg = document.createElement('p');
+  msg.className = 'loading confirm-msg';
+  msg.textContent = 'Submitting confirmation…';
+  resultContainer.appendChild(msg);
+
+  const result = await DCTIN_API.confirmThreat(hash);
+  msg.remove();
+
+  const notice = document.createElement('div');
+  if (result.success) {
+    notice.className = 'success-box confirm-msg';
+    notice.textContent = `✔ Confirmed! Total confirmations: ${result.data?.totalConfirmations ?? '?'} (tx: ${result.data?.transactionHash?.substring(0, 12)}...)`;
+    // Update the inline count
+    const el = resultContainer.querySelector('#confirm-count');
+    if (el) el.textContent = result.data?.totalConfirmations ?? '?';
+  } else {
+    notice.className = 'error-box confirm-msg';
+    notice.textContent = `❌ ${result.data?.message || result.data?.error || 'Failed to confirm threat'}`;
+  }
+  resultContainer.appendChild(notice);
+}
+
+// ============ Analytics ============
+
+/// Chart.js instances (kept so we can destroy before re-rendering)
+const _charts = {};
+
+function initAnalytics() {
+  document.getElementById('analytics-refresh-btn').addEventListener('click', loadAnalytics);
+}
+
+async function loadAnalytics() {
+  // Update summary stat cards
+  document.getElementById('an-total').textContent = '…';
+  document.getElementById('an-active').textContent = '…';
+  document.getElementById('an-resolved').textContent = '…';
+  document.getElementById('an-critical').textContent = '…';
+
+  const result = await DCTIN_API.getAnalytics();
+
+  if (!result.success) {
+    console.error('Analytics fetch failed', result);
+    return;
+  }
+
+  const d = result.data;
+
+  // Summary cards
+  document.getElementById('an-total').textContent = d.total ?? 0;
+  document.getElementById('an-active').textContent = d.byStatus?.ACTIVE ?? 0;
+  document.getElementById('an-resolved').textContent = d.byStatus?.RESOLVED ?? 0;
+  document.getElementById('an-critical').textContent = d.bySeverity?.CRITICAL ?? 0;
+
+  // Donut: threat types
+  _renderDonut('chart-types', Object.entries(d.byType || {}).map(([label, value]) => ({ label, value })),
+    ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#3b82f6', '#f97316', '#8b5cf6', '#14b8a6']);
+
+  // Donut: severity distribution
+  _renderDonut('chart-severity',
+    [
+      { label: 'Low', value: d.bySeverity?.LOW ?? 0 },
+      { label: 'Medium', value: d.bySeverity?.MEDIUM ?? 0 },
+      { label: 'High', value: d.bySeverity?.HIGH ?? 0 },
+      { label: 'Critical', value: d.bySeverity?.CRITICAL ?? 0 }
+    ],
+    ['#6ee7b7', '#fcd34d', '#fb923c', '#f87171']
+  );
+
+  // Bar: 7-day trend
+  const trend = d.dailyTrend || [];
+  _renderBar('chart-trend', trend.map(b => b.date.slice(5)), trend.map(b => b.count),
+    'Threats reported', '#6366f1');
+}
+
+function _renderDonut(canvasId, items, colors) {
+  if (_charts[canvasId]) {
+    _charts[canvasId].destroy();
+  }
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  _charts[canvasId] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: items.map(i => i.label),
+      datasets: [{
+        data: items.map(i => i.value),
+        backgroundColor: colors,
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'right', labels: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function _renderBar(canvasId, labels, data, label, color) {
+  if (_charts[canvasId]) {
+    _charts[canvasId].destroy();
+  }
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  _charts[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        backgroundColor: color + '99',
+        borderColor: color,
+        borderWidth: 1.5,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
 }
 
 // Change page
@@ -649,3 +794,4 @@ const SEARCH_REFRESH_DELAY = 1500;
 // Expose functions that are called from inline HTML onclick handlers
 window.searchByHash = searchByHash;
 window.changeStatus = changeStatus;
+window.confirmThreatUI = confirmThreatUI;

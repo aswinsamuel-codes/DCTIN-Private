@@ -111,6 +111,29 @@ async function updateThreatStatus(hash, status) {
   return apiRequest(`/threat/${hash}/status`, 'PUT', { status });
 }
 
+/**
+ * Confirm an existing threat
+ * @param {string} hash - bytes32 threat hash
+ */
+async function confirmThreat(hash) {
+  return apiRequest('/confirm-threat', 'POST', { hash });
+}
+
+/**
+ * Get confirmation count for a threat
+ * @param {string} hash - bytes32 threat hash
+ */
+async function getConfirmationCount(hash) {
+  return apiRequest(`/threat/${hash}/confirmations`);
+}
+
+/**
+ * Get aggregated analytics
+ */
+async function getAnalytics() {
+  return apiRequest('/analytics');
+}
+
 // Export API functions
 window.DCTIN_API = {
   checkHealth,
@@ -123,5 +146,8 @@ window.DCTIN_API = {
   checkThreatExists,
   reportThreatBatch,
   getReporterStats,
-  updateThreatStatus
+  updateThreatStatus,
+  confirmThreat,
+  getConfirmationCount,
+  getAnalytics
 };

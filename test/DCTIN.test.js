@@ -632,4 +632,73 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       expect(threat.status).to.equal(ThreatStatus.RESOLVED);
     });
   });
+
+  describe("Threat Confirmation", function () {
+    beforeEach(async function () {
+      // Owner reports a threat; reporter1 will confirm it
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.HIGH);
+      await dctin.addReporter(reporter1.address);
+      await dctin.addReporter(reporter2.address);
+    });
+
+    it("Should start with zero confirmations", async function () {
+      expect(await dctin.getConfirmationCount(sampleThreatHash)).to.equal(0);
+    });
+
+    it("Should allow a different reporter to confirm a threat", async function () {
+      await expect(dctin.connect(reporter1).confirmThreat(sampleThreatHash))
+        .to.emit(dctin, "ThreatConfirmed")
+        .withArgs(sampleThreatHash, reporter1.address, 1);
+
+      expect(await dctin.getConfirmationCount(sampleThreatHash)).to.equal(1);
+    });
+
+    it("Should accumulate confirmations from multiple reporters", async function () {
+      await dctin.connect(reporter1).confirmThreat(sampleThreatHash);
+      await dctin.connect(reporter2).confirmThreat(sampleThreatHash);
+
+      expect(await dctin.getConfirmationCount(sampleThreatHash)).to.equal(2);
+    });
+
+    it("Should track hasConfirmedThreat correctly", async function () {
+      expect(await dctin.hasConfirmedThreat(sampleThreatHash, reporter1.address)).to.be.false;
+
+      await dctin.connect(reporter1).confirmThreat(sampleThreatHash);
+
+      expect(await dctin.hasConfirmedThreat(sampleThreatHash, reporter1.address)).to.be.true;
+      expect(await dctin.hasConfirmedThreat(sampleThreatHash, reporter2.address)).to.be.false;
+    });
+
+    it("Should reject double-confirmation by the same reporter", async function () {
+      await dctin.connect(reporter1).confirmThreat(sampleThreatHash);
+
+      await expect(dctin.connect(reporter1).confirmThreat(sampleThreatHash))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__AlreadyConfirmed");
+    });
+
+    it("Should reject the original reporter confirming their own threat", async function () {
+      await expect(dctin.confirmThreat(sampleThreatHash))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__CannotConfirmOwnThreat");
+    });
+
+    it("Should reject confirmation by unauthorized address", async function () {
+      await expect(dctin.connect(unauthorized).confirmThreat(sampleThreatHash))
+        .to.be.reverted;
+    });
+
+    it("Should reject confirmation of a non-existent threat", async function () {
+      await expect(dctin.connect(reporter1).confirmThreat(ethers.id("nonexistent")))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatNotFound");
+    });
+
+    it("Should reject zero hash in confirmThreat", async function () {
+      await expect(dctin.connect(reporter1).confirmThreat(ethers.ZeroHash))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidThreatHash");
+    });
+
+    it("Should revert getConfirmationCount for non-existent hash", async function () {
+      await expect(dctin.getConfirmationCount(ethers.id("nonexistent")))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatNotFound");
+    });
+  });
 });

@@ -438,3 +438,76 @@ export async function updateThreatStatus(req, res) {
     return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
   }
 }
+
+/**
+ * Confirm an existing threat
+ * POST /confirm-threat
+ */
+export async function confirmThreat(req, res) {
+  try {
+    const { hash } = req.body;
+
+    if (!hash) {
+      return res.status(400).json({ success: false, error: 'Missing required field: hash' });
+    }
+
+    const result = await blockchainService.confirmThreat(hash);
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - confirmThreat:', error);
+
+    if (error.message?.includes('ALREADY_CONFIRMED')) {
+      return res.status(409).json({ success: false, error: 'Conflict', message: error.message });
+    }
+    if (error.message?.includes('CANNOT_CONFIRM_OWN')) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+    if (error.message?.includes('NOT_FOUND')) {
+      return res.status(404).json({ success: false, error: 'Not Found', message: 'Threat not found' });
+    }
+
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+  }
+}
+
+/**
+ * Get confirmation count for a threat
+ * GET /threat/:hash/confirmations
+ */
+export async function getConfirmationCount(req, res) {
+  try {
+    const { hash } = req.params;
+
+    if (!hash) {
+      return res.status(400).json({ success: false, error: 'Missing required parameter: hash' });
+    }
+
+    const result = await blockchainService.getConfirmationCount(hash);
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - getConfirmationCount:', error);
+
+    if (error.message?.includes('NOT_FOUND')) {
+      return res.status(404).json({ success: false, error: 'Not Found', message: 'Threat not found' });
+    }
+
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+  }
+}
+
+/**
+ * Get aggregated threat analytics
+ * GET /analytics
+ */
+export async function getAnalytics(req, res) {
+  try {
+    const result = await blockchainService.getAnalytics();
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - getAnalytics:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+  }
+}

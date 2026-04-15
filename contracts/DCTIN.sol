@@ -121,6 +121,15 @@ contract DCTIN is AccessControl {
     /// @notice Per-reporter stats for reputation scoring
     mapping(address => ReporterStats) private _reporterStats;
 
+    // ============ Confirmation ============
+
+    /// @notice Number of independent reporter confirmations per threat hash
+    mapping(bytes32 => uint256) private _confirmationCount;
+
+    /// @notice Tracks whether a specific reporter has already confirmed a threat
+    /// @dev Prevents double-confirmation; reporter => hash => confirmed
+    mapping(address => mapping(bytes32 => bool)) private _hasConfirmed;
+
     // ============ Events ============
     /**
      * @notice Emitted when a new threat is reported
@@ -168,6 +177,18 @@ contract DCTIN is AccessControl {
         address indexed updatedBy
     );
 
+    /**
+     * @notice Emitted when a reporter independently confirms an existing threat
+     * @param threatHash The confirmed threat hash (indexed)
+     * @param confirmer The reporter who confirmed (indexed)
+     * @param totalConfirmations Running total confirmations for this threat
+     */
+    event ThreatConfirmed(
+        bytes32 indexed threatHash,
+        address indexed confirmer,
+        uint256 totalConfirmations
+    );
+
     // ============ Errors ============
     error DCTIN__ThreatAlreadyExists(bytes32 threatHash);
     error DCTIN__InvalidThreatHash();
@@ -181,6 +202,8 @@ contract DCTIN is AccessControl {
     error DCTIN__EmptyBatch();
     error DCTIN__BatchTooLarge(uint256 provided, uint256 maximum);
     error DCTIN__UnauthorizedStatusUpdate();
+    error DCTIN__AlreadyConfirmed(bytes32 threatHash, address confirmer);
+    error DCTIN__CannotConfirmOwnThreat(bytes32 threatHash);
 
     // ============ Constructor ============
     /**
@@ -404,6 +427,41 @@ contract DCTIN is AccessControl {
         emit ThreatStatusUpdated(_threatHash, oldStatus, newStatus, msg.sender);
     }
 
+    /**
+     * @notice Confirm an existing threat reported by a different reporter
+     * @dev Only reporters may confirm; a reporter cannot confirm their own submission;
+     *      each reporter may confirm a given threat only once.
+     * @param _threatHash Threat hash to confirm
+     *
+     * Security:
+     * - Zero hash rejected
+     * - Hash must already exist in the registry
+     * - Reporter cannot confirm their own threat (prevents self-inflation)
+     * - Double-confirmation by the same address is rejected
+     */
+    function confirmThreat(bytes32 _threatHash) external onlyRole(REPORTER_ROLE) {
+        if (_threatHash == bytes32(0)) revert DCTIN__InvalidThreatHash();
+
+        uint256 index = _hashToIndex[_threatHash];
+        if (index == 0) revert DCTIN__ThreatNotFound(_threatHash);
+
+        // Prevent reporters from confirming their own submission
+        if (_threatReports[index - 1].reporter == msg.sender) {
+            revert DCTIN__CannotConfirmOwnThreat(_threatHash);
+        }
+
+        // Prevent double-confirmation from the same address
+        if (_hasConfirmed[msg.sender][_threatHash]) {
+            revert DCTIN__AlreadyConfirmed(_threatHash, msg.sender);
+        }
+
+        _hasConfirmed[msg.sender][_threatHash] = true;
+        uint256 newCount = _confirmationCount[_threatHash] + 1;
+        _confirmationCount[_threatHash] = newCount;
+
+        emit ThreatConfirmed(_threatHash, msg.sender, newCount);
+    }
+
     // ============ View Functions ============
     
     /**
@@ -415,6 +473,29 @@ contract DCTIN is AccessControl {
         address _reporter
     ) external view returns (ReporterStats memory) {
         return _reporterStats[_reporter];
+    }
+
+    /**
+     * @notice Get the number of independent confirmations for a threat
+     * @param _threatHash Threat to query
+     * @return uint256 Total confirmation count
+     */
+    function getConfirmationCount(bytes32 _threatHash) external view returns (uint256) {
+        if (_hashToIndex[_threatHash] == 0) revert DCTIN__ThreatNotFound(_threatHash);
+        return _confirmationCount[_threatHash];
+    }
+
+    /**
+     * @notice Check whether a specific address has already confirmed a threat
+     * @param _threatHash Threat to query
+     * @param _confirmer Address to check
+     * @return bool True if the address has confirmed this threat
+     */
+    function hasConfirmedThreat(
+        bytes32 _threatHash,
+        address _confirmer
+    ) external view returns (bool) {
+        return _hasConfirmed[_confirmer][_threatHash];
     }
 
     /**

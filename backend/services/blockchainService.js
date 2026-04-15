@@ -537,3 +537,178 @@ export async function updateThreatStatus(hash, status) {
     throw error;
   }
 }
+
+/**
+ * Confirm an existing threat as an independent reporter
+ * @param {string} hash - bytes32 threat hash
+ * @returns {Promise<Object>} Transaction receipt
+ */
+export async function confirmThreat(hash) {
+  try {
+    const contract = getContract();
+
+    if (!hash || !ethers.isHexString(hash) || hash.length !== BYTES32_HEX_LENGTH) {
+      throw new Error('Invalid hash format. Expected 32-byte hex string');
+    }
+
+    const bytes32Hash = hash.startsWith('0x') ? hash : `0x${hash}`;
+
+    console.log(`✅ Confirming threat: ${bytes32Hash}`);
+
+    const tx = await contract.confirmThreat(bytes32Hash);
+    const receipt = await tx.wait();
+
+    // Extract total confirmations from event
+    let totalConfirmations = 0;
+    for (const log of receipt.logs) {
+      try {
+        const parsed = contract.interface.parseLog(log);
+        if (parsed?.name === 'ThreatConfirmed') {
+          totalConfirmations = Number(parsed.args.totalConfirmations);
+        }
+      } catch (_) { /* ignore non-matching logs */ }
+    }
+
+    console.log(`✅ Threat confirmed. Total confirmations: ${totalConfirmations}`);
+
+    return {
+      success: true,
+      transactionHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed.toString(),
+      threatHash: bytes32Hash,
+      totalConfirmations
+    };
+
+  } catch (error) {
+    if (error.code === 'CALL_EXCEPTION' || error.code === 'ACTION_REJECTED') {
+      const msg = error.reason || error.shortMessage || error.message;
+      if (msg?.includes('DCTIN__AlreadyConfirmed')) {
+        throw new Error('ALREADY_CONFIRMED: You have already confirmed this threat');
+      }
+      if (msg?.includes('DCTIN__CannotConfirmOwnThreat')) {
+        throw new Error('CANNOT_CONFIRM_OWN: Reporters cannot confirm their own submissions');
+      }
+      if (msg?.includes('DCTIN__ThreatNotFound')) {
+        throw new Error('NOT_FOUND: Threat not found');
+      }
+      throw new Error(`CONTRACT_ERROR: ${msg}`);
+    }
+
+    console.error('❌ Error confirming threat:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get the number of independent confirmations for a threat
+ * @param {string} hash - bytes32 threat hash
+ * @returns {Promise<Object>} Confirmation count
+ */
+export async function getConfirmationCount(hash) {
+  try {
+    const contract = getContract();
+
+    if (!hash || !ethers.isHexString(hash) || hash.length !== BYTES32_HEX_LENGTH) {
+      throw new Error('Invalid hash format. Expected 32-byte hex string');
+    }
+
+    const bytes32Hash = hash.startsWith('0x') ? hash : `0x${hash}`;
+    const count = await contract.getConfirmationCount(bytes32Hash);
+
+    return {
+      success: true,
+      threatHash: bytes32Hash,
+      confirmations: Number(count)
+    };
+
+  } catch (error) {
+    if (error.message?.includes('DCTIN__ThreatNotFound')) {
+      throw new Error('NOT_FOUND: Threat not found');
+    }
+    console.error('❌ Error fetching confirmation count:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get aggregated analytics across all recorded threats
+ * @returns {Promise<Object>} Analytics breakdown by type, severity, status, and daily trend
+ */
+export async function getAnalytics() {
+  try {
+    const contract = getContract();
+
+    const total = Number(await contract.getTotalThreats());
+
+    if (total === 0) {
+      return {
+        success: true,
+        total: 0,
+        byType: {},
+        bySeverity: { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 },
+        byStatus: { ACTIVE: 0, RESOLVED: 0, DISPUTED: 0 },
+        dailyTrend: []
+      };
+    }
+
+    // Fetch all threats in one paginated call (max 1000)
+    const pageSize = Math.min(total, 1000);
+    const threats = await contract.getThreatsPaginated(0, pageSize);
+
+    const typeNames = {
+      0: 'MALWARE', 1: 'PHISHING_URL', 2: 'MALICIOUS_IP', 3: 'C2_SERVER',
+      4: 'BOTNET_NODE', 5: 'RANSOMWARE', 6: 'EXPLOIT_PAYLOAD', 7: 'SUSPICIOUS_DOMAIN'
+    };
+
+    const byType = {};
+    const bySeverity = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
+    const byStatus = { ACTIVE: 0, RESOLVED: 0, DISPUTED: 0 };
+
+    // 7-day trend: bucket threats by calendar day
+    const now = Date.now();
+    const dayMs = 86400000;
+    const trend = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now - (6 - i) * dayMs);
+      return {
+        date: d.toISOString().slice(0, 10),
+        count: 0
+      };
+    });
+
+    for (const t of threats) {
+      // By type
+      const typeName = typeNames[Number(t.threatType)] || 'UNKNOWN';
+      byType[typeName] = (byType[typeName] || 0) + 1;
+
+      // By severity
+      const sevNames = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      const sevName = sevNames[Number(t.severity)] || 'LOW';
+      bySeverity[sevName]++;
+
+      // By status
+      const statusNames = ['ACTIVE', 'RESOLVED', 'DISPUTED'];
+      const statusName = statusNames[Number(t.status)] || 'ACTIVE';
+      byStatus[statusName]++;
+
+      // Daily trend
+      const tsMs = Number(t.timestamp) * 1000;
+      const dayStr = new Date(tsMs).toISOString().slice(0, 10);
+      const bucket = trend.find(b => b.date === dayStr);
+      if (bucket) bucket.count++;
+    }
+
+    return {
+      success: true,
+      total,
+      byType,
+      bySeverity,
+      byStatus,
+      dailyTrend: trend
+    };
+
+  } catch (error) {
+    console.error('❌ Error fetching analytics:', error);
+    throw error;
+  }
+}

@@ -139,9 +139,12 @@ Open `frontend/index.html` in your browser (or serve with `python3 -m http.serve
 | GET | `/threats?page=1&limit=10` | Paginated threat list |
 | GET | `/threat/:hash` | Get threat by bytes32 hash |
 | PUT | `/threat/:hash/status` | Update threat status `{ status: 0/1/2 }` |
+| GET | `/threat/:hash/confirmations` | Get confirmation count for a threat |
+| POST | `/confirm-threat` | Confirm an existing threat `{ hash }` |
 | GET | `/reporter/:address` | All threats by reporter |
 | GET | `/reporter/:address/stats` | Reporter reputation stats |
 | GET | `/threat-exists/:hash` | Check if hash is registered |
+| GET | `/analytics` | Aggregated analytics (by type, severity, status, 7-day trend) |
 | POST | `/analyze-url` | AI analysis only (no blockchain write) |
 | POST | `/report-threat-ai` | AI analysis + auto blockchain submission |
 | GET | `/stats` | Total threat count |
@@ -161,6 +164,9 @@ function reportThreatBatch(ThreatInput[] calldata threats) external;
 // Update status: 0=ACTIVE, 1=RESOLVED, 2=DISPUTED (reporter of that threat OR admin)
 function updateThreatStatus(bytes32 hash, uint256 status) external;
 
+// Confirm an existing threat (reporter only; cannot confirm own submission; once per reporter)
+function confirmThreat(bytes32 hash) external;
+
 // Role management (admin only)
 function addReporter(address reporter) external;
 function removeReporter(address reporter) external;
@@ -172,6 +178,8 @@ function removeReporter(address reporter) external;
 function getThreatByHash(bytes32 hash) external view returns (ThreatReport memory);
 function getThreatStatus(bytes32 hash) external view returns (ThreatStatus);
 function getReporterStats(address reporter) external view returns (ReporterStats memory);
+function getConfirmationCount(bytes32 hash) external view returns (uint256);
+function hasConfirmedThreat(bytes32 hash, address confirmer) external view returns (bool);
 function getThreatsPaginated(uint256 start, uint256 count) external view returns (ThreatReport[] memory);
 function getThreatsByReporter(address reporter) external view returns (bytes32[] memory);
 function threatExists(bytes32 hash) external view returns (bool);
@@ -197,16 +205,17 @@ function getTotalThreats() external view returns (uint256);
 npx hardhat test
 ```
 
-Tests cover: deployment, threat reporting (single + batch), severity validation, batch errors, access control, rate limiting, pagination, reporter reputation stats, and threat status lifecycle.
+Tests cover: deployment, threat reporting (single + batch), severity validation, batch errors, access control, rate limiting, pagination, reporter reputation stats, threat status lifecycle, and threat confirmation.
 
 ## Gas Costs
 
 | Operation | Estimated Gas |
 |-----------|--------------|
-| Deploy | ~2,600,000 |
+| Deploy | ~2,700,000 |
 | Report Threat (single) | ~70,000 |
 | Report Threat Batch (10) | ~450,000 |
 | Update Threat Status | ~35,000 |
+| Confirm Threat | ~55,000 |
 | Add Reporter | ~45,000 |
 | Get Threat (view) | ~2,500 |
 
@@ -219,10 +228,16 @@ Tests cover: deployment, threat reporting (single + batch), severity validation,
 5. **Custom Errors** — gas-efficient `DCTIN__*` custom error types
 6. **Duplicate Prevention** — O(1) mapping lookup; same hash can never be reported twice
 7. **Status Authorization** — only original reporter or admin can change threat status
+8. **Confirmation Integrity** — reporters cannot confirm their own threats; one confirmation per reporter per threat
 
 ## Roadmap
 
-### Phase 3 (Planned)
+### Phase 3 (Complete)
+- ✅ **Threat Confirmation** — `confirmThreat()` + `getConfirmationCount()` + `hasConfirmedThreat()`
+- ✅ **Analytics API** — `GET /analytics`: per-type, per-severity, per-status counts + 7-day trend
+- ✅ **Analytics Tab** — Chart.js donut + bar + line charts in the frontend dashboard
+
+### Phase 4 (Planned)
 - **Multi-Sig Admin Control** — Gnosis Safe / M-of-N governance
 - **Timelock** — 24 h delay on admin actions via OpenZeppelin `TimelockController`
 - **IPFS Metadata** — store full threat metadata off-chain, CID on-chain

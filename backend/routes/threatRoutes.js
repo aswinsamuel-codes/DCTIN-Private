@@ -8,7 +8,10 @@ import {
   threatExists,
   getStats,
   getReporterStats,
-  updateThreatStatus
+  updateThreatStatus,
+  confirmThreat,
+  getConfirmationCount,
+  getAnalytics
 } from '../controllers/threatController.js';
 
 const router = express.Router();
@@ -40,6 +43,20 @@ router.get('/threat/:hash', getThreatByHash);
  * @body    { status: number }
  */
 router.put('/threat/:hash/status', updateThreatStatus);
+
+/**
+ * @route   GET /threat/:hash/confirmations
+ * @desc    Get the confirmation count for a threat
+ * @param   hash - bytes32 threat hash
+ */
+router.get('/threat/:hash/confirmations', getConfirmationCount);
+
+/**
+ * @route   POST /confirm-threat
+ * @desc    Confirm an existing threat as an independent reporter
+ * @body    { hash: string }
+ */
+router.post('/confirm-threat', confirmThreat);
 
 /**
  * @route   GET /threats
@@ -75,6 +92,12 @@ router.get('/threat-exists/:hash', threatExists);
  * @desc    Get blockchain statistics
  */
 router.get('/stats', getStats);
+
+/**
+ * @route   GET /analytics
+ * @desc    Aggregated analytics: per-type, per-severity, per-status counts + 7-day trend
+ */
+router.get('/analytics', getAnalytics);
 
 /**
  * @route   GET /health

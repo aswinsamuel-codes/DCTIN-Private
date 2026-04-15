@@ -25,6 +25,7 @@
       <button class="nav-btn" data-view="analyzer">URL Analyzer</button>
       <button class="nav-btn" data-view="explorer">Threat Explorer</button>
       <button class="nav-btn" data-view="search">Hash Search</button>
+      <button class="nav-btn" data-view="analytics">Analytics</button>
     </nav>
 
     <!-- Dashboard View -->
@@ -169,6 +170,41 @@
       </div>
     </section>
 
+    <!-- Analytics View -->
+    <section id="analytics-view" class="view">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <h2 style="margin:0;">Threat Analytics</h2>
+          <button id="analytics-refresh-btn" class="btn secondary">Refresh</button>
+        </div>
+        <p class="description">Aggregated insights from all on-chain threat records.</p>
+
+        <!-- Summary row -->
+        <div class="stats-grid" id="analytics-summary" style="margin-bottom:20px;">
+          <div class="stat-card"><h3>Total Threats</h3><p id="an-total" class="stat-value">-</p></div>
+          <div class="stat-card"><h3>Active</h3><p id="an-active" class="stat-value" style="color:#1e40af;">-</p></div>
+          <div class="stat-card"><h3>Resolved</h3><p id="an-resolved" class="stat-value" style="color:#166534;">-</p></div>
+          <div class="stat-card"><h3>Critical</h3><p id="an-critical" class="stat-value" style="color:#7f1d1d;">-</p></div>
+        </div>
+
+        <!-- Charts grid -->
+        <div class="charts-grid">
+          <div class="chart-box">
+            <h3>Threat Types</h3>
+            <canvas id="chart-types" width="280" height="280"></canvas>
+          </div>
+          <div class="chart-box">
+            <h3>Severity Distribution</h3>
+            <canvas id="chart-severity" width="280" height="280"></canvas>
+          </div>
+          <div class="chart-box chart-box-wide">
+            <h3>7-Day Threat Trend</h3>
+            <canvas id="chart-trend" width="580" height="220"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Footer -->
     <footer class="footer">
       <p>DCTIN - Decentralized Cyber Threat Intelligence Network</p>
@@ -176,6 +212,7 @@
     </footer>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="api.js"></script>
   <script src="app.js"></script>
 </body>
