@@ -86,6 +86,31 @@ async function checkThreatExists(hash) {
   return apiRequest(`/threat-exists/${hash}`);
 }
 
+/**
+ * Report multiple threats in a single blockchain transaction
+ * @param {Array<{hash: string, type: number, severity?: number}>} threats
+ */
+async function reportThreatBatch(threats) {
+  return apiRequest('/report-threat-batch', 'POST', { threats });
+}
+
+/**
+ * Get reporter reputation stats
+ * @param {string} address - Ethereum address
+ */
+async function getReporterStats(address) {
+  return apiRequest(`/reporter/${address}/stats`);
+}
+
+/**
+ * Update threat status
+ * @param {string} hash - bytes32 threat hash
+ * @param {number} status - 0=ACTIVE, 1=RESOLVED, 2=DISPUTED
+ */
+async function updateThreatStatus(hash, status) {
+  return apiRequest(`/threat/${hash}/status`, 'PUT', { status });
+}
+
 // Export API functions
 window.DCTIN_API = {
   checkHealth,
@@ -95,5 +120,8 @@ window.DCTIN_API = {
   analyzeUrl,
   reportThreatAI,
   getAIStatus,
-  checkThreatExists
+  checkThreatExists,
+  reportThreatBatch,
+  getReporterStats,
+  updateThreatStatus
 };

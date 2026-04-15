@@ -47,6 +47,7 @@ app.get('/', (req, res) => {
       // Blockchain endpoints
       health: 'GET /health',
       reportThreat: 'POST /report-threat',
+      reportThreatBatch: 'POST /report-threat-batch',
       getThreat: 'GET /threat/:hash',
       getThreats: 'GET /threats?page=1&limit=10',
       getReporterThreats: 'GET /reporter/:address',
@@ -97,6 +98,7 @@ app.listen(PORT, () => {
   console.log('Blockchain Endpoints:');
   console.log('  GET  /health           - Health check');
   console.log('  POST /report-threat    - Report new threat (legacy)');
+  console.log('  POST /report-threat-batch - Report multiple threats (batch)');
   console.log('  POST /report-threat-ai - Report with AI validation');
   console.log('  GET  /threat/:hash     - Get threat by hash');
   console.log('  GET  /threats          - Get paginated threats');

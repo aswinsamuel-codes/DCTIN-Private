@@ -6,7 +6,7 @@ import * as blockchainService from '../services/blockchainService.js';
  */
 export async function reportThreat(req, res) {
   try {
-    const { hash, type } = req.body;
+    const { hash, type, severity } = req.body;
     
     // Validate request body
     if (!hash) {
@@ -31,8 +31,17 @@ export async function reportThreat(req, res) {
         error: 'Invalid type: must be an integer between 0 and 7'
       });
     }
+
+    // Severity defaults to LOW (0) if not provided
+    const severityNum = severity !== undefined ? parseInt(severity, 10) : 0;
+    if (isNaN(severityNum) || severityNum < 0 || severityNum > 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid severity: must be an integer between 0 and 3 (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)'
+      });
+    }
     
-    const result = await blockchainService.reportThreat(hash, typeNum);
+    const result = await blockchainService.reportThreat(hash, typeNum, severityNum);
     
     return res.status(201).json(result);
     
@@ -57,6 +66,14 @@ export async function reportThreat(req, res) {
     }
     
     if (error.message?.includes('INVALID_HASH')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: error.message
+      });
+    }
+
+    if (error.message?.includes('INVALID_SEVERITY')) {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
@@ -88,6 +105,70 @@ export async function reportThreat(req, res) {
       });
     }
     
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: error.message
+    });
+  }
+}
+
+/**
+ * Batch report multiple threats in a single transaction
+ * POST /report-threat-batch
+ */
+export async function reportThreatBatch(req, res) {
+  try {
+    const { threats } = req.body;
+
+    if (!Array.isArray(threats) || threats.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: threats (non-empty array required)'
+      });
+    }
+
+    if (threats.length > 50) {
+      return res.status(400).json({
+        success: false,
+        error: 'Batch too large. Maximum 50 threats per batch'
+      });
+    }
+
+    // Validate each threat entry
+    for (let i = 0; i < threats.length; i++) {
+      const t = threats[i];
+      if (!t.hash) {
+        return res.status(400).json({ success: false, error: `Missing hash at index ${i}` });
+      }
+      const typeNum = parseInt(t.type, 10);
+      if (isNaN(typeNum) || typeNum < 0 || typeNum > 7) {
+        return res.status(400).json({ success: false, error: `Invalid type at index ${i}: must be 0-7` });
+      }
+      const sevNum = t.severity !== undefined ? parseInt(t.severity, 10) : 0;
+      if (isNaN(sevNum) || sevNum < 0 || sevNum > 3) {
+        return res.status(400).json({ success: false, error: `Invalid severity at index ${i}: must be 0-3` });
+      }
+      // Normalise back to numbers for the service layer
+      threats[i] = { hash: t.hash, type: typeNum, severity: sevNum };
+    }
+
+    const result = await blockchainService.reportThreatBatch(threats);
+    return res.status(201).json(result);
+
+  } catch (error) {
+    console.error('Controller error - reportThreatBatch:', error);
+
+    if (error.message?.includes('DUPLICATE_THREAT')) {
+      return res.status(409).json({ success: false, error: 'Conflict', message: error.message });
+    }
+    if (error.message?.includes('BATCH_TOO_LARGE')) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+    if (error.message?.includes('RATE_LIMIT_EXCEEDED')) {
+      return res.status(429).json({ success: false, error: 'Too Many Requests', message: error.message });
+    }
+
     return res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -288,5 +369,72 @@ export async function getStats(req, res) {
       error: 'Internal Server Error',
       message: error.message
     });
+  }
+}
+
+/**
+ * Get reporter reputation stats
+ * GET /reporter/:address/stats
+ */
+export async function getReporterStats(req, res) {
+  try {
+    const { address } = req.params;
+
+    if (!address) {
+      return res.status(400).json({ success: false, error: 'Missing required parameter: address' });
+    }
+
+    const result = await blockchainService.getReporterStats(address);
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - getReporterStats:', error);
+
+    if (error.message?.includes('Invalid Ethereum address')) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+  }
+}
+
+/**
+ * Update threat status (ACTIVE / RESOLVED / DISPUTED)
+ * PUT /threat/:hash/status
+ */
+export async function updateThreatStatus(req, res) {
+  try {
+    const { hash } = req.params;
+    const { status } = req.body;
+
+    if (!hash) {
+      return res.status(400).json({ success: false, error: 'Missing required parameter: hash' });
+    }
+    if (status === undefined || status === null) {
+      return res.status(400).json({ success: false, error: 'Missing required field: status (0=ACTIVE, 1=RESOLVED, 2=DISPUTED)' });
+    }
+
+    const statusNum = parseInt(status, 10);
+    if (isNaN(statusNum) || statusNum < 0 || statusNum > 2) {
+      return res.status(400).json({ success: false, error: 'Invalid status: must be 0 (ACTIVE), 1 (RESOLVED), or 2 (DISPUTED)' });
+    }
+
+    const result = await blockchainService.updateThreatStatus(hash, statusNum);
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - updateThreatStatus:', error);
+
+    if (error.message?.includes('UNAUTHORIZED_STATUS_UPDATE')) {
+      return res.status(403).json({ success: false, error: 'Forbidden', message: error.message });
+    }
+    if (error.message?.includes('NOT_FOUND')) {
+      return res.status(404).json({ success: false, error: 'Not Found', message: 'Threat not found' });
+    }
+    if (error.message?.includes('INVALID_STATUS')) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
   }
 }

@@ -24,6 +24,7 @@
       <button class="nav-btn active" data-view="dashboard">Dashboard</button>
       <button class="nav-btn" data-view="analyzer">URL Analyzer</button>
       <button class="nav-btn" data-view="explorer">Threat Explorer</button>
+      <button class="nav-btn" data-view="search">Hash Search</button>
     </nav>
 
     <!-- Dashboard View -->
@@ -50,6 +51,13 @@
       <div class="card">
         <h2>Latest Threats</h2>
         <div id="latest-threats" class="threat-list">
+          <p class="loading">Loading...</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Reporter Leaderboard</h2>
+        <div id="reporter-leaderboard" class="threat-list">
           <p class="loading">Loading...</p>
         </div>
       </div>
@@ -101,7 +109,21 @@
             <option value="6">Exploit Payload</option>
             <option value="7">Suspicious Domain</option>
           </select>
+          <select id="severity-filter" class="filter-select">
+            <option value="">All Severities</option>
+            <option value="0">Low</option>
+            <option value="1">Medium</option>
+            <option value="2">High</option>
+            <option value="3">Critical</option>
+          </select>
+          <select id="status-filter" class="filter-select">
+            <option value="">All Statuses</option>
+            <option value="0">Active</option>
+            <option value="1">Resolved</option>
+            <option value="2">Disputed</option>
+          </select>
           <button id="refresh-btn" class="btn secondary">Refresh</button>
+          <button id="export-csv-btn" class="btn secondary">Export CSV</button>
         </div>
 
         <div id="threats-table-container">
@@ -110,12 +132,14 @@
               <tr>
                 <th>Hash</th>
                 <th>Type</th>
+                <th>Severity</th>
+                <th>Status</th>
                 <th>Reporter</th>
                 <th>Timestamp</th>
               </tr>
             </thead>
             <tbody id="threats-tbody">
-              <tr><td colspan="4" class="loading">Loading threats...</td></tr>
+              <tr><td colspan="6" class="loading">Loading threats...</td></tr>
             </tbody>
           </table>
         </div>
@@ -124,6 +148,23 @@
           <button id="prev-page" class="btn small">Previous</button>
           <span id="page-info">Page 1</span>
           <button id="next-page" class="btn small">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Hash Search View -->
+    <section id="search-view" class="view">
+      <div class="card">
+        <h2>Hash Search</h2>
+        <p class="description">Look up a specific threat by its bytes32 hash.</p>
+
+        <div class="input-group">
+          <input type="text" id="hash-input" placeholder="0x1234...abcd (66-character hex hash)" class="url-input">
+          <button id="search-btn" class="btn primary">Search</button>
+        </div>
+
+        <div id="search-result" class="result-container hidden">
+          <!-- Search results appear here -->
         </div>
       </div>
     </section>

@@ -1,11 +1,14 @@
 import express from 'express';
 import {
   reportThreat,
+  reportThreatBatch,
   getThreatByHash,
   getThreatsPaginated,
   getThreatsByReporter,
   threatExists,
-  getStats
+  getStats,
+  getReporterStats,
+  updateThreatStatus
 } from '../controllers/threatController.js';
 
 const router = express.Router();
@@ -13,9 +16,16 @@ const router = express.Router();
 /**
  * @route   POST /report-threat
  * @desc    Report a new threat to the blockchain
- * @body    { hash: string, type: number }
+ * @body    { hash: string, type: number, severity?: number }
  */
 router.post('/report-threat', reportThreat);
+
+/**
+ * @route   POST /report-threat-batch
+ * @desc    Report multiple threats in a single blockchain transaction
+ * @body    { threats: Array<{ hash: string, type: number, severity?: number }> }
+ */
+router.post('/report-threat-batch', reportThreatBatch);
 
 /**
  * @route   GET /threat/:hash
@@ -23,6 +33,13 @@ router.post('/report-threat', reportThreat);
  * @param   hash - bytes32 threat hash
  */
 router.get('/threat/:hash', getThreatByHash);
+
+/**
+ * @route   PUT /threat/:hash/status
+ * @desc    Update threat status (ACTIVE=0 / RESOLVED=1 / DISPUTED=2)
+ * @body    { status: number }
+ */
+router.put('/threat/:hash/status', updateThreatStatus);
 
 /**
  * @route   GET /threats
@@ -38,6 +55,13 @@ router.get('/threats', getThreatsPaginated);
  * @param   address - Ethereum address of the reporter
  */
 router.get('/reporter/:address', getThreatsByReporter);
+
+/**
+ * @route   GET /reporter/:address/stats
+ * @desc    Get reputation statistics for a reporter
+ * @param   address - Ethereum address of the reporter
+ */
+router.get('/reporter/:address/stats', getReporterStats);
 
 /**
  * @route   GET /threat-exists/:hash
