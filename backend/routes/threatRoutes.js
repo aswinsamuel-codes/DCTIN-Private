@@ -6,7 +6,9 @@ import {
   getThreatsPaginated,
   getThreatsByReporter,
   threatExists,
-  getStats
+  getStats,
+  getReporterStats,
+  updateThreatStatus
 } from '../controllers/threatController.js';
 
 const router = express.Router();
@@ -33,6 +35,13 @@ router.post('/report-threat-batch', reportThreatBatch);
 router.get('/threat/:hash', getThreatByHash);
 
 /**
+ * @route   PUT /threat/:hash/status
+ * @desc    Update threat status (ACTIVE=0 / RESOLVED=1 / DISPUTED=2)
+ * @body    { status: number }
+ */
+router.put('/threat/:hash/status', updateThreatStatus);
+
+/**
  * @route   GET /threats
  * @desc    Get threats with pagination
  * @query   page - Page number (default: 1)
@@ -46,6 +55,13 @@ router.get('/threats', getThreatsPaginated);
  * @param   address - Ethereum address of the reporter
  */
 router.get('/reporter/:address', getThreatsByReporter);
+
+/**
+ * @route   GET /reporter/:address/stats
+ * @desc    Get reputation statistics for a reporter
+ * @param   address - Ethereum address of the reporter
+ */
+router.get('/reporter/:address/stats', getReporterStats);
 
 /**
  * @route   GET /threat-exists/:hash

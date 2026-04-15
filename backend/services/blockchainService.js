@@ -12,6 +12,18 @@ const SEVERITY_NAMES = {
 };
 
 /**
+ * Status enum values matching the smart contract
+ */
+const STATUS_NAMES = {
+  0: 'ACTIVE',
+  1: 'RESOLVED',
+  2: 'DISPUTED'
+};
+
+/// @notice Length of a valid bytes32 hex string including "0x" prefix (2 + 64 chars)
+const BYTES32_HEX_LENGTH = 66;
+
+/**
  * Threat type names matching the smart contract enum
  */
 function getThreatTypeName(type) {
@@ -36,6 +48,13 @@ function getSeverityName(severity) {
 }
 
 /**
+ * Status name from enum value
+ */
+function getStatusName(status) {
+  return STATUS_NAMES[status] || 'UNKNOWN';
+}
+
+/**
  * Report a new threat to the blockchain
  * @param {string} hash - bytes32 threat hash (0x... format)
  * @param {number} type - Threat type enum value (0-7)
@@ -48,7 +67,7 @@ export async function reportThreat(hash, type, severity = 0) {
     const wallet = getWallet();
     
     // Validate hash format
-    if (!hash || !ethers.isHexString(hash) || hash.length !== 66) {
+    if (!hash || !ethers.isHexString(hash) || hash.length !== BYTES32_HEX_LENGTH) {
       throw new Error('Invalid hash format. Expected 32-byte hex string (0x... + 64 chars)');
     }
     
@@ -110,6 +129,8 @@ export async function reportThreat(hash, type, severity = 0) {
       threatTypeName: getThreatTypeName(type),
       severity: severity,
       severityName: getSeverityName(severity),
+      status: 0,
+      statusName: 'ACTIVE',
       threatIndex: threatIndex,
       reporter: wallet.address
     };
@@ -166,7 +187,7 @@ export async function reportThreatBatch(threats) {
 
     // Validate and transform each item
     const batchInput = threats.map((t, i) => {
-      if (!t.hash || !ethers.isHexString(t.hash) || t.hash.length !== 66) {
+      if (!t.hash || !ethers.isHexString(t.hash) || t.hash.length !== BYTES32_HEX_LENGTH) {
         throw new Error(`Invalid hash at index ${i}. Expected 32-byte hex string`);
       }
       if (typeof t.type !== 'number' || t.type < 0 || t.type > 7) {
@@ -237,7 +258,7 @@ export async function getThreatByHash(hash) {
     const contract = getContract();
     
     // Validate hash format
-    if (!hash || !ethers.isHexString(hash) || hash.length !== 66) {
+    if (!hash || !ethers.isHexString(hash) || hash.length !== BYTES32_HEX_LENGTH) {
       throw new Error('Invalid hash format. Expected 32-byte hex string (0x... + 64 chars)');
     }
     
@@ -255,7 +276,9 @@ export async function getThreatByHash(hash) {
       threatType: Number(threat.threatType),
       threatTypeName: getThreatTypeName(Number(threat.threatType)),
       severity: Number(threat.severity),
-      severityName: getSeverityName(Number(threat.severity))
+      severityName: getSeverityName(Number(threat.severity)),
+      status: Number(threat.status),
+      statusName: getStatusName(Number(threat.status))
     };
     
   } catch (error) {
@@ -300,7 +323,9 @@ export async function getThreatsPaginated(start, count) {
       threatType: Number(threat.threatType),
       threatTypeName: getThreatTypeName(Number(threat.threatType)),
       severity: Number(threat.severity),
-      severityName: getSeverityName(Number(threat.severity))
+      severityName: getSeverityName(Number(threat.severity)),
+      status: Number(threat.status),
+      statusName: getStatusName(Number(threat.status))
     }));
     
     return {
@@ -350,7 +375,9 @@ export async function getThreatsByReporter(address) {
           threatType: Number(threat.threatType),
           threatTypeName: getThreatTypeName(Number(threat.threatType)),
           severity: Number(threat.severity),
-          severityName: getSeverityName(Number(threat.severity))
+          severityName: getSeverityName(Number(threat.severity)),
+          status: Number(threat.status),
+          statusName: getStatusName(Number(threat.status))
         });
       } catch (e) {
         console.warn(`Failed to fetch threat details for ${hash}:`, e.message);
@@ -379,7 +406,7 @@ export async function threatExists(hash) {
   try {
     const contract = getContract();
     
-    if (!hash || !ethers.isHexString(hash) || hash.length !== 66) {
+    if (!hash || !ethers.isHexString(hash) || hash.length !== BYTES32_HEX_LENGTH) {
       throw new Error('Invalid hash format');
     }
     
@@ -414,6 +441,99 @@ export async function getTotalThreats() {
     
   } catch (error) {
     console.error('❌ Error fetching total threats:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get reputation stats for a reporter address
+ * @param {string} address - Reporter Ethereum address
+ * @returns {Promise<Object>} Reputation stats
+ */
+export async function getReporterStats(address) {
+  try {
+    const contract = getContract();
+
+    if (!ethers.isAddress(address)) {
+      throw new Error('Invalid Ethereum address format');
+    }
+
+    console.log(`📊 Fetching reporter stats for: ${address}`);
+
+    const stats = await contract.getReporterStats(address);
+
+    return {
+      success: true,
+      reporter: address,
+      totalReports: Number(stats.totalReports),
+      criticalReports: Number(stats.criticalReports),
+      highReports: Number(stats.highReports),
+      firstReportAt: Number(stats.firstReportAt) > 0
+        ? new Date(Number(stats.firstReportAt) * 1000).toISOString()
+        : null,
+      lastReportAt: Number(stats.lastReportAt) > 0
+        ? new Date(Number(stats.lastReportAt) * 1000).toISOString()
+        : null
+    };
+
+  } catch (error) {
+    console.error('❌ Error fetching reporter stats:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update the status of an existing threat (ACTIVE / RESOLVED / DISPUTED)
+ * @param {string} hash - bytes32 threat hash
+ * @param {number} status - New status (0=ACTIVE, 1=RESOLVED, 2=DISPUTED)
+ * @returns {Promise<Object>} Transaction receipt
+ */
+export async function updateThreatStatus(hash, status) {
+  try {
+    const contract = getContract();
+
+    if (!hash || !ethers.isHexString(hash) || hash.length !== BYTES32_HEX_LENGTH) {
+      throw new Error('Invalid hash format. Expected 32-byte hex string');
+    }
+    if (typeof status !== 'number' || status < 0 || status > 2) {
+      throw new Error('Invalid status. Expected integer 0-2 (ACTIVE, RESOLVED, DISPUTED)');
+    }
+
+    const bytes32Hash = hash.startsWith('0x') ? hash : `0x${hash}`;
+
+    console.log(`🔄 Updating threat status: ${bytes32Hash} → ${STATUS_NAMES[status]}`);
+
+    const tx = await contract.updateThreatStatus(bytes32Hash, status);
+    const receipt = await tx.wait();
+
+    console.log(`✅ Status updated in block ${receipt.blockNumber}`);
+
+    return {
+      success: true,
+      transactionHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed.toString(),
+      threatHash: bytes32Hash,
+      newStatus: status,
+      statusName: STATUS_NAMES[status]
+    };
+
+  } catch (error) {
+    if (error.code === 'CALL_EXCEPTION' || error.code === 'ACTION_REJECTED') {
+      const msg = error.reason || error.shortMessage || error.message;
+      if (msg?.includes('DCTIN__UnauthorizedStatusUpdate')) {
+        throw new Error('UNAUTHORIZED_STATUS_UPDATE: Only the original reporter or an admin can change status');
+      }
+      if (msg?.includes('DCTIN__ThreatNotFound')) {
+        throw new Error('NOT_FOUND: Threat not found');
+      }
+      if (msg?.includes('DCTIN__InvalidStatus')) {
+        throw new Error('INVALID_STATUS: Status must be 0 (ACTIVE), 1 (RESOLVED), or 2 (DISPUTED)');
+      }
+      throw new Error(`CONTRACT_ERROR: ${msg}`);
+    }
+
+    console.error('❌ Error updating threat status:', error);
     throw error;
   }
 }

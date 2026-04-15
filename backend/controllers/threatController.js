@@ -371,3 +371,70 @@ export async function getStats(req, res) {
     });
   }
 }
+
+/**
+ * Get reporter reputation stats
+ * GET /reporter/:address/stats
+ */
+export async function getReporterStats(req, res) {
+  try {
+    const { address } = req.params;
+
+    if (!address) {
+      return res.status(400).json({ success: false, error: 'Missing required parameter: address' });
+    }
+
+    const result = await blockchainService.getReporterStats(address);
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - getReporterStats:', error);
+
+    if (error.message?.includes('Invalid Ethereum address')) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+  }
+}
+
+/**
+ * Update threat status (ACTIVE / RESOLVED / DISPUTED)
+ * PUT /threat/:hash/status
+ */
+export async function updateThreatStatus(req, res) {
+  try {
+    const { hash } = req.params;
+    const { status } = req.body;
+
+    if (!hash) {
+      return res.status(400).json({ success: false, error: 'Missing required parameter: hash' });
+    }
+    if (status === undefined || status === null) {
+      return res.status(400).json({ success: false, error: 'Missing required field: status (0=ACTIVE, 1=RESOLVED, 2=DISPUTED)' });
+    }
+
+    const statusNum = parseInt(status, 10);
+    if (isNaN(statusNum) || statusNum < 0 || statusNum > 2) {
+      return res.status(400).json({ success: false, error: 'Invalid status: must be 0 (ACTIVE), 1 (RESOLVED), or 2 (DISPUTED)' });
+    }
+
+    const result = await blockchainService.updateThreatStatus(hash, statusNum);
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('Controller error - updateThreatStatus:', error);
+
+    if (error.message?.includes('UNAUTHORIZED_STATUS_UPDATE')) {
+      return res.status(403).json({ success: false, error: 'Forbidden', message: error.message });
+    }
+    if (error.message?.includes('NOT_FOUND')) {
+      return res.status(404).json({ success: false, error: 'Not Found', message: 'Threat not found' });
+    }
+    if (error.message?.includes('INVALID_STATUS')) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: error.message });
+    }
+
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error.message });
+  }
+}

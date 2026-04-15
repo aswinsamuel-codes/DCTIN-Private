@@ -56,6 +56,13 @@
       </div>
 
       <div class="card">
+        <h2>Reporter Leaderboard</h2>
+        <div id="reporter-leaderboard" class="threat-list">
+          <p class="loading">Loading...</p>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>AI Engine Status</h2>
         <div id="ai-status" class="status-grid">
           <p class="loading">Loading...</p>
@@ -109,6 +116,12 @@
             <option value="2">High</option>
             <option value="3">Critical</option>
           </select>
+          <select id="status-filter" class="filter-select">
+            <option value="">All Statuses</option>
+            <option value="0">Active</option>
+            <option value="1">Resolved</option>
+            <option value="2">Disputed</option>
+          </select>
           <button id="refresh-btn" class="btn secondary">Refresh</button>
           <button id="export-csv-btn" class="btn secondary">Export CSV</button>
         </div>
@@ -120,12 +133,13 @@
                 <th>Hash</th>
                 <th>Type</th>
                 <th>Severity</th>
+                <th>Status</th>
                 <th>Reporter</th>
                 <th>Timestamp</th>
               </tr>
             </thead>
             <tbody id="threats-tbody">
-              <tr><td colspan="5" class="loading">Loading threats...</td></tr>
+              <tr><td colspan="6" class="loading">Loading threats...</td></tr>
             </tbody>
           </table>
         </div>

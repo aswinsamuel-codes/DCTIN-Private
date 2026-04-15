@@ -38,12 +38,18 @@ contract DCTIN is AccessControl {
         CRITICAL  // 3: Critical severity
     }
 
+    enum ThreatStatus {
+        ACTIVE,    // 0: Threat is active and unresolved
+        RESOLVED,  // 1: Threat has been mitigated / neutralized
+        DISPUTED   // 2: Threat is under dispute / review
+    }
+
     // ============ Structs ============
     /**
      * @notice Stores all threat report data
      * @dev MAXIMUM gas optimization - entire struct fits in TWO storage slots
      * Slot 1: threatHash (32) = 32 bytes
-     * Slot 2: reporter (20) + timestamp (8) + threatType (1) + severity (1) + padding (2) = 32 bytes
+     * Slot 2: reporter (20) + timestamp (8) + threatType (1) + severity (1) + status (1) + padding (1) = 32 bytes
      */
     struct ThreatReport {
         bytes32 threatHash;        // 32 bytes - Fixed size, no dynamic allocation
@@ -51,7 +57,8 @@ contract DCTIN is AccessControl {
         uint64 timestamp;          // 8 bytes
         ThreatType threatType;     // 1 byte
         ThreatSeverity severity;   // 1 byte
-                                   // 2 bytes padding
+        ThreatStatus status;       // 1 byte
+                                   // 1 byte padding
     }
 
     /**
@@ -62,6 +69,20 @@ contract DCTIN is AccessControl {
         bytes32 threatHash;
         uint256 threatType;
         uint256 severity;
+    }
+
+    /**
+     * @notice Stores per-reporter reputation metrics
+     * @dev Packed into ONE storage slot — 28 of 32 bytes used
+     * totalReports(4) + criticalReports(4) + highReports(4) + firstReportAt(8) + lastReportAt(8) = 28 bytes + 4 bytes padding
+     */
+    struct ReporterStats {
+        uint32 totalReports;      // 4 bytes — total threats submitted
+        uint32 criticalReports;   // 4 bytes — critical severity submissions
+        uint32 highReports;       // 4 bytes — high severity submissions
+        uint64 firstReportAt;     // 8 bytes — unix timestamp of first submission
+        uint64 lastReportAt;      // 8 bytes — unix timestamp of most recent submission
+                                  // 4 bytes padding (fills 28 of 32 bytes in one storage slot)
     }
 
     // ============ State Variables ============
@@ -94,6 +115,11 @@ contract DCTIN is AccessControl {
     
     /// @notice Emitted when reporter exceeds rate limit
     event RateLimitExceeded(address indexed reporter, uint256 blockNumber, uint256 attemptCount);
+
+    // ============ Reputation ============
+
+    /// @notice Per-reporter stats for reputation scoring
+    mapping(address => ReporterStats) private _reporterStats;
 
     // ============ Events ============
     /**
@@ -128,17 +154,33 @@ contract DCTIN is AccessControl {
      */
     event ReporterRemoved(address indexed reporter, address indexed revoker);
 
+    /**
+     * @notice Emitted when a threat's status is updated
+     * @param threatHash The threat that was updated (indexed for filtering)
+     * @param oldStatus Previous status
+     * @param newStatus New status
+     * @param updatedBy Address that triggered the update (indexed)
+     */
+    event ThreatStatusUpdated(
+        bytes32 indexed threatHash,
+        ThreatStatus oldStatus,
+        ThreatStatus newStatus,
+        address indexed updatedBy
+    );
+
     // ============ Errors ============
     error DCTIN__ThreatAlreadyExists(bytes32 threatHash);
     error DCTIN__InvalidThreatHash();
     error DCTIN__InvalidThreatType();
     error DCTIN__InvalidSeverity();
+    error DCTIN__InvalidStatus();
     error DCTIN__NotAuthorizedReporter();
     error DCTIN__ThreatNotFound(bytes32 threatHash);
     error DCTIN__RateLimitExceeded(address reporter, uint256 blockNumber);
     error DCTIN__InvalidPaginationRange();
     error DCTIN__EmptyBatch();
     error DCTIN__BatchTooLarge(uint256 provided, uint256 maximum);
+    error DCTIN__UnauthorizedStatusUpdate();
 
     // ============ Constructor ============
     /**
@@ -207,7 +249,8 @@ contract DCTIN is AccessControl {
             reporter: msg.sender,
             timestamp: uint64(block.timestamp),
             threatType: _threatType,
-            severity: _severity
+            severity: _severity,
+            status: ThreatStatus.ACTIVE
         });
 
         // Add to array and update mappings
@@ -217,6 +260,9 @@ contract DCTIN is AccessControl {
         
         // Increment rate limit counter
         _reportsPerBlock[msg.sender][currentBlock] = reportsThisBlock + 1;
+
+        // Update reporter reputation stats
+        _updateReporterStats(msg.sender, _severity, uint64(block.timestamp));
 
         // Emit event for transparency and off-chain indexing
         // Event emission happens AFTER all state changes (checks-effects-interactions)
@@ -277,7 +323,8 @@ contract DCTIN is AccessControl {
                 reporter: msg.sender,
                 timestamp: timestamp,
                 threatType: threatType,
-                severity: severity
+                severity: severity,
+                status: ThreatStatus.ACTIVE
             });
 
             _threatReports.push(newReport);
@@ -292,6 +339,9 @@ contract DCTIN is AccessControl {
                 reportIndex - 1,
                 severity
             );
+
+            // Update reputation stats per item
+            _updateReporterStats(msg.sender, severity, timestamp);
         }
 
         // Update rate limit counter once for the entire batch
@@ -318,13 +368,71 @@ contract DCTIN is AccessControl {
         emit ReporterRemoved(_reporter, msg.sender);
     }
 
+    /**
+     * @notice Update the status of an existing threat
+     * @dev Only the original reporter OR an admin may change the status
+     * @param _threatHash Threat to update
+     * @param _statusRaw New status (0=ACTIVE, 1=RESOLVED, 2=DISPUTED)
+     *
+     * Security:
+     * - Only the original reporter or an admin can change status
+     * - Invalid status values are rejected
+     * - Zero hash is rejected
+     */
+    function updateThreatStatus(
+        bytes32 _threatHash,
+        uint256 _statusRaw
+    ) external {
+        if (_threatHash == bytes32(0)) revert DCTIN__InvalidThreatHash();
+        if (_statusRaw > uint256(ThreatStatus.DISPUTED)) revert DCTIN__InvalidStatus();
+
+        uint256 index = _hashToIndex[_threatHash];
+        if (index == 0) revert DCTIN__ThreatNotFound(_threatHash);
+
+        ThreatReport storage report = _threatReports[index - 1];
+
+        // Only original reporter or admin may update
+        if (report.reporter != msg.sender && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert DCTIN__UnauthorizedStatusUpdate();
+        }
+
+        ThreatStatus oldStatus = report.status;
+        ThreatStatus newStatus = ThreatStatus(_statusRaw);
+
+        report.status = newStatus;
+
+        emit ThreatStatusUpdated(_threatHash, oldStatus, newStatus, msg.sender);
+    }
+
     // ============ View Functions ============
     
+    /**
+     * @notice Get reputation statistics for a reporter
+     * @param _reporter Address of the reporter
+     * @return ReporterStats struct with total/critical/high counts and timestamps
+     */
+    function getReporterStats(
+        address _reporter
+    ) external view returns (ReporterStats memory) {
+        return _reporterStats[_reporter];
+    }
+
+    /**
+     * @notice Get the current status of a threat
+     * @param _threatHash Threat to query
+     * @return ThreatStatus enum value (0=ACTIVE, 1=RESOLVED, 2=DISPUTED)
+     */
+    function getThreatStatus(bytes32 _threatHash) external view returns (ThreatStatus) {
+        uint256 index = _hashToIndex[_threatHash];
+        if (index == 0) revert DCTIN__ThreatNotFound(_threatHash);
+        return _threatReports[index - 1].status;
+    }
+
     /**
      * @notice Get a threat report by its hash
      * @param _threatHash The hash to look up (bytes32)
      * @return ThreatReport struct with all threat data
-     * 
+     *
      * Gas Consideration: View function, no gas cost for external calls
      * bytes32 parameter is more efficient than string (no length prefix)
      */
@@ -459,6 +567,33 @@ contract DCTIN is AccessControl {
 
     // ============ Internal Functions ============
     
+    /**
+     * @notice Update the reputation stats for a reporter after a submission
+     * @param _reporter The reporter address
+     * @param _severity The severity of the submitted threat
+     * @param _timestamp Block timestamp of the submission
+     */
+    function _updateReporterStats(
+        address _reporter,
+        ThreatSeverity _severity,
+        uint64 _timestamp
+    ) internal {
+        ReporterStats storage stats = _reporterStats[_reporter];
+
+        stats.totalReports += 1;
+
+        if (_severity == ThreatSeverity.CRITICAL) {
+            stats.criticalReports += 1;
+        } else if (_severity == ThreatSeverity.HIGH) {
+            stats.highReports += 1;
+        }
+
+        if (stats.firstReportAt == 0) {
+            stats.firstReportAt = _timestamp;
+        }
+        stats.lastReportAt = _timestamp;
+    }
+
     /**
      * @notice Override supportsInterface for AccessControl
      */

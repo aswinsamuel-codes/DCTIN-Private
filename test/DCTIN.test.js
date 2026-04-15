@@ -27,6 +27,13 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
     CRITICAL: 3
   };
 
+  // Status enum values
+  const ThreatStatus = {
+    ACTIVE: 0,
+    RESOLVED: 1,
+    DISPUTED: 2
+  };
+
   // Sample threat hashes as bytes32
   const sampleThreatHash = ethers.id("malware_sample_1"); // keccak256 hash
   const sampleThreatHash2 = ethers.id("phishing_url_sample_1");
@@ -484,6 +491,145 @@ describe("DCTIN - Decentralized Cyber Threat Intelligence Network (v2 bytes32)",
       // Should succeed with exactly MAX_REPORTS_PER_BLOCK items (rate limit reset each block)
       await expect(dctin.reportThreatBatch(maxBatch)).to.not.be.reverted;
       expect(await dctin.getTotalThreats()).to.equal(10);
+    });
+  });
+
+  describe("Reporter Reputation System", function () {
+    it("Should initialize reporter stats at zero before first submission", async function () {
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.totalReports).to.equal(0);
+      expect(stats.criticalReports).to.equal(0);
+      expect(stats.highReports).to.equal(0);
+      expect(stats.firstReportAt).to.equal(0);
+      expect(stats.lastReportAt).to.equal(0);
+    });
+
+    it("Should increment totalReports after a submission", async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.MEDIUM);
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.totalReports).to.equal(1);
+    });
+
+    it("Should track criticalReports correctly", async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.RANSOMWARE, ThreatSeverity.CRITICAL);
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.criticalReports).to.equal(1);
+      expect(stats.highReports).to.equal(0);
+    });
+
+    it("Should track highReports correctly", async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.C2_SERVER, ThreatSeverity.HIGH);
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.highReports).to.equal(1);
+      expect(stats.criticalReports).to.equal(0);
+    });
+
+    it("Should not increment criticalReports or highReports for LOW/MEDIUM severity", async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.LOW);
+      await dctin.reportThreat(sampleThreatHash2, ThreatType.MALWARE, ThreatSeverity.MEDIUM);
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.totalReports).to.equal(2);
+      expect(stats.criticalReports).to.equal(0);
+      expect(stats.highReports).to.equal(0);
+    });
+
+    it("Should record firstReportAt and lastReportAt timestamps", async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.LOW);
+      await dctin.reportThreat(sampleThreatHash2, ThreatType.MALWARE, ThreatSeverity.LOW);
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.firstReportAt).to.be.gt(0);
+      expect(stats.lastReportAt).to.be.gte(stats.firstReportAt);
+    });
+
+    it("Should track stats independently per reporter", async function () {
+      await dctin.addReporter(reporter1.address);
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.CRITICAL);
+      await dctin.connect(reporter1).reportThreat(sampleThreatHash2, ThreatType.PHISHING_URL, ThreatSeverity.HIGH);
+
+      const ownerStats = await dctin.getReporterStats(owner.address);
+      const r1Stats = await dctin.getReporterStats(reporter1.address);
+
+      expect(ownerStats.totalReports).to.equal(1);
+      expect(ownerStats.criticalReports).to.equal(1);
+      expect(r1Stats.totalReports).to.equal(1);
+      expect(r1Stats.highReports).to.equal(1);
+    });
+
+    it("Should accumulate batch submissions in reputation stats", async function () {
+      const batch = [
+        { threatHash: ethers.id("rep_batch_1"), threatType: ThreatType.MALWARE, severity: ThreatSeverity.CRITICAL },
+        { threatHash: ethers.id("rep_batch_2"), threatType: ThreatType.PHISHING_URL, severity: ThreatSeverity.HIGH },
+        { threatHash: ethers.id("rep_batch_3"), threatType: ThreatType.SUSPICIOUS_DOMAIN, severity: ThreatSeverity.LOW }
+      ];
+      await dctin.reportThreatBatch(batch);
+
+      const stats = await dctin.getReporterStats(owner.address);
+      expect(stats.totalReports).to.equal(3);
+      expect(stats.criticalReports).to.equal(1);
+      expect(stats.highReports).to.equal(1);
+    });
+  });
+
+  describe("Threat Status / Resolution", function () {
+    beforeEach(async function () {
+      await dctin.reportThreat(sampleThreatHash, ThreatType.MALWARE, ThreatSeverity.HIGH);
+    });
+
+    it("Should default new threats to ACTIVE status", async function () {
+      const threat = await dctin.getThreatByHash(sampleThreatHash);
+      expect(threat.status).to.equal(ThreatStatus.ACTIVE);
+    });
+
+    it("Should allow original reporter to mark threat as RESOLVED", async function () {
+      await expect(dctin.updateThreatStatus(sampleThreatHash, ThreatStatus.RESOLVED))
+        .to.emit(dctin, "ThreatStatusUpdated")
+        .withArgs(sampleThreatHash, ThreatStatus.ACTIVE, ThreatStatus.RESOLVED, owner.address);
+
+      expect(await dctin.getThreatStatus(sampleThreatHash)).to.equal(ThreatStatus.RESOLVED);
+    });
+
+    it("Should allow original reporter to mark threat as DISPUTED", async function () {
+      await dctin.updateThreatStatus(sampleThreatHash, ThreatStatus.DISPUTED);
+      expect(await dctin.getThreatStatus(sampleThreatHash)).to.equal(ThreatStatus.DISPUTED);
+    });
+
+    it("Should allow admin to update threat status", async function () {
+      // Add reporter1 as reporter and submit a threat
+      await dctin.addReporter(reporter1.address);
+      await dctin.connect(reporter1).reportThreat(sampleThreatHash2, ThreatType.PHISHING_URL, ThreatSeverity.LOW);
+
+      // Admin (owner) can update reporter1's threat
+      await expect(dctin.updateThreatStatus(sampleThreatHash2, ThreatStatus.RESOLVED))
+        .to.emit(dctin, "ThreatStatusUpdated");
+    });
+
+    it("Should reject status update from unauthorized address", async function () {
+      await expect(
+        dctin.connect(unauthorized).updateThreatStatus(sampleThreatHash, ThreatStatus.RESOLVED)
+      ).to.be.revertedWithCustomError(dctin, "DCTIN__UnauthorizedStatusUpdate");
+    });
+
+    it("Should reject status update from non-owner reporter", async function () {
+      await dctin.addReporter(reporter1.address);
+      await expect(
+        dctin.connect(reporter1).updateThreatStatus(sampleThreatHash, ThreatStatus.RESOLVED)
+      ).to.be.revertedWithCustomError(dctin, "DCTIN__UnauthorizedStatusUpdate");
+    });
+
+    it("Should reject invalid status value", async function () {
+      await expect(dctin.updateThreatStatus(sampleThreatHash, 3))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__InvalidStatus");
+    });
+
+    it("Should revert getThreatStatus for non-existent hash", async function () {
+      await expect(dctin.getThreatStatus(ethers.id("nonexistent")))
+        .to.be.revertedWithCustomError(dctin, "DCTIN__ThreatNotFound");
+    });
+
+    it("Should persist status after update — getThreatByHash returns updated status", async function () {
+      await dctin.updateThreatStatus(sampleThreatHash, ThreatStatus.RESOLVED);
+      const threat = await dctin.getThreatByHash(sampleThreatHash);
+      expect(threat.status).to.equal(ThreatStatus.RESOLVED);
     });
   });
 });

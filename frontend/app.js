@@ -32,6 +32,13 @@ const SEVERITY_NAMES = {
   3: 'Critical'
 };
 
+// Status mapping
+const STATUS_NAMES = {
+  0: 'Active',
+  1: 'Resolved',
+  2: 'Disputed'
+};
+
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
   initNavigation();
@@ -41,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadDashboardData();
   checkConnection();
 });
-
 // Navigation
 function initNavigation() {
   const navButtons = document.querySelectorAll('.nav-btn');
@@ -94,6 +100,7 @@ async function loadDashboardData() {
   await Promise.all([
     loadStats(),
     loadLatestThreats(),
+    loadReporterLeaderboard(),
     loadAIStatus()
   ]);
 }
@@ -137,6 +144,7 @@ async function loadLatestThreats() {
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="severity-badge sev-${threat.severity ?? 0}">${SEVERITY_NAMES[threat.severity ?? 0] || 'Low'}</span>
+          <span class="status-badge-sm status-${threat.status ?? 0}">${STATUS_NAMES[threat.status ?? 0] || 'Active'}</span>
           <span class="threat-time">${formatTimestamp(threat.timestamp)}</span>
         </div>
       </div>
@@ -144,6 +152,45 @@ async function loadLatestThreats() {
   } else {
     container.innerHTML = '<p class="empty">No threats recorded yet</p>';
   }
+}
+
+// Load reporter leaderboard
+async function loadReporterLeaderboard() {
+  const container = document.getElementById('reporter-leaderboard');
+  const result = await DCTIN_API.getThreats(1, 1000);
+
+  if (!result.success || !result.data.threats?.length) {
+    container.innerHTML = '<p class="empty">No reporters yet</p>';
+    return;
+  }
+
+  // Aggregate counts per reporter from threat list
+  const counts = {};
+  for (const t of result.data.threats) {
+    const r = t.reporter;
+    if (!counts[r]) counts[r] = { total: 0, critical: 0, high: 0 };
+    counts[r].total++;
+    if ((t.severity ?? 0) === 3) counts[r].critical++;
+    if ((t.severity ?? 0) === 2) counts[r].high++;
+  }
+
+  const sorted = Object.entries(counts)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 5);
+
+  container.innerHTML = sorted.map(([addr, s], i) => `
+    <div class="threat-item">
+      <div class="threat-info">
+        <span class="rank-badge">#${i + 1}</span>
+        <span class="threat-hash">${truncateHash(addr, 10)}</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span class="type-badge type-0">${s.total} reports</span>
+        ${s.critical ? `<span class="severity-badge sev-3">${s.critical} critical</span>` : ''}
+        ${s.high ? `<span class="severity-badge sev-2">${s.high} high</span>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
 // Load AI status
@@ -352,6 +399,10 @@ function initExplorer() {
     state.currentPage = 1;
     loadThreats();
   });
+  document.getElementById('status-filter').addEventListener('change', () => {
+    state.currentPage = 1;
+    loadThreats();
+  });
 }
 
 // Load threats
@@ -359,34 +410,30 @@ async function loadThreats() {
   const tbody = document.getElementById('threats-tbody');
   const typeFilter = document.getElementById('type-filter').value;
   const severityFilter = document.getElementById('severity-filter').value;
+  const statusFilter = document.getElementById('status-filter').value;
   
-  tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading threats...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="loading">Loading threats...</td></tr>';
   
   const result = await DCTIN_API.getThreats(state.currentPage, state.threatsPerPage);
   
   if (result.success) {
     let threats = result.data.threats || [];
     
-    // Apply type filter if selected
-    if (typeFilter) {
-      threats = threats.filter(t => t.threatType.toString() === typeFilter);
-    }
-
-    // Apply severity filter if selected
-    if (severityFilter) {
-      threats = threats.filter(t => (t.severity ?? 0).toString() === severityFilter);
-    }
+    if (typeFilter) threats = threats.filter(t => t.threatType.toString() === typeFilter);
+    if (severityFilter) threats = threats.filter(t => (t.severity ?? 0).toString() === severityFilter);
+    if (statusFilter) threats = threats.filter(t => (t.status ?? 0).toString() === statusFilter);
     
     state.threats = threats;
     
     if (threats.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">No threats found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No threats found</td></tr>';
     } else {
       tbody.innerHTML = threats.map(threat => `
         <tr class="${getThreatClass(threat.threatType)}">
           <td class="mono" title="${threat.threatHash}">${truncateHash(threat.threatHash, 16)}</td>
           <td><span class="type-badge type-${threat.threatType}">${THREAT_TYPES[threat.threatType] || 'Unknown'}</span></td>
           <td><span class="severity-badge sev-${threat.severity ?? 0}">${SEVERITY_NAMES[threat.severity ?? 0] || 'Low'}</span></td>
+          <td><span class="status-badge-sm status-${threat.status ?? 0}">${STATUS_NAMES[threat.status ?? 0] || 'Active'}</span></td>
           <td class="mono">${truncateHash(threat.reporter, 10)}</td>
           <td>${formatTimestamp(threat.timestamp)}</td>
         </tr>
@@ -400,7 +447,7 @@ async function loadThreats() {
     document.getElementById('prev-page').disabled = state.currentPage <= 1;
     document.getElementById('next-page').disabled = state.currentPage >= totalPages;
   } else {
-    tbody.innerHTML = `<tr><td colspan="5" class="error">Error loading threats: ${result.error}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="error">Error loading threats: ${result.error}</td></tr>`;
   }
 }
 
@@ -419,13 +466,15 @@ async function exportThreatsCSV() {
     }
 
     const threats = result.data.threats;
-    const headers = ['Hash', 'Type', 'Type Name', 'Severity', 'Severity Name', 'Reporter', 'Timestamp'];
+    const headers = ['Hash', 'Type', 'Type Name', 'Severity', 'Severity Name', 'Status', 'Status Name', 'Reporter', 'Timestamp'];
     const rows = threats.map(t => [
       t.threatHash,
       t.threatType,
       THREAT_TYPES[t.threatType] || 'Unknown',
       t.severity ?? 0,
       SEVERITY_NAMES[t.severity ?? 0] || 'Low',
+      t.status ?? 0,
+      STATUS_NAMES[t.status ?? 0] || 'Active',
       t.reporter,
       t.timestamp ? new Date(t.timestamp).toLocaleString() : 'N/A'
     ]);
@@ -485,13 +534,20 @@ async function searchByHash(hash) {
         <div class="result-header">
           <span class="classification phishing">${THREAT_TYPES[t.threatType] || 'Unknown'}</span>
           <span class="severity-badge sev-${t.severity ?? 0}">${SEVERITY_NAMES[t.severity ?? 0] || 'Low'}</span>
+          <span class="status-badge-sm status-${t.status ?? 0}">${STATUS_NAMES[t.status ?? 0] || 'Active'}</span>
         </div>
         <div class="result-details">
           <p><strong>Hash:</strong> <span class="mono">${t.threatHash}</span></p>
           <p><strong>Type:</strong> ${t.threatTypeName || THREAT_TYPES[t.threatType] || 'Unknown'}</p>
           <p><strong>Severity:</strong> ${t.severityName || SEVERITY_NAMES[t.severity ?? 0] || 'Low'}</p>
+          <p><strong>Status:</strong> ${t.statusName || STATUS_NAMES[t.status ?? 0] || 'Active'}</p>
           <p><strong>Reporter:</strong> <span class="mono">${t.reporter}</span></p>
           <p><strong>Reported At:</strong> ${new Date(t.timestamp).toLocaleString()}</p>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn secondary" onclick="changeStatus('${t.threatHash}', 0)">Mark Active</button>
+          <button class="btn secondary" onclick="changeStatus('${t.threatHash}', 1)">Mark Resolved</button>
+          <button class="btn secondary" onclick="changeStatus('${t.threatHash}', 2)">Mark Disputed</button>
         </div>
       </div>
     `;
@@ -507,6 +563,39 @@ async function searchByHash(hash) {
         ❌ Search failed: ${result.data?.message || result.data?.error || 'Unknown error'}
       </div>
     `;
+  }
+}
+
+// Change threat status from the Hash Search panel
+async function changeStatus(hash, status) {
+  const resultContainer = document.getElementById('search-result');
+  const statusLabel = STATUS_NAMES[status] || 'Unknown';
+
+  const existing = resultContainer.querySelector('.status-msg');
+  if (existing) existing.remove();
+
+  const msg = document.createElement('p');
+  msg.className = 'loading status-msg';
+  msg.textContent = `Updating to ${statusLabel}...`;
+  resultContainer.appendChild(msg);
+
+  const result = await DCTIN_API.updateThreatStatus(hash, status);
+
+  msg.remove();
+
+  const notice = document.createElement('div');
+  if (result.success) {
+    notice.className = 'success-box status-msg';
+    notice.textContent = `✅ Status updated to ${statusLabel} (tx: ${result.data?.transactionHash?.substring(0, 12)}...)`;
+  } else {
+    notice.className = 'error-box status-msg';
+    notice.textContent = `❌ ${result.data?.message || result.data?.error || 'Failed to update status'}`;
+  }
+  resultContainer.appendChild(notice);
+
+  // Refresh the search result to show new status
+  if (result.success) {
+    setTimeout(() => searchByHash(hash), SEARCH_REFRESH_DELAY);
   }
 }
 
@@ -553,3 +642,10 @@ setInterval(() => {
     loadDashboardData();
   }
 }, 30000);
+
+/// @notice Delay in ms before re-fetching a threat after a status update
+const SEARCH_REFRESH_DELAY = 1500;
+
+// Expose functions that are called from inline HTML onclick handlers
+window.searchByHash = searchByHash;
+window.changeStatus = changeStatus;

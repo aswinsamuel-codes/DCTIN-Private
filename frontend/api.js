@@ -94,6 +94,23 @@ async function reportThreatBatch(threats) {
   return apiRequest('/report-threat-batch', 'POST', { threats });
 }
 
+/**
+ * Get reporter reputation stats
+ * @param {string} address - Ethereum address
+ */
+async function getReporterStats(address) {
+  return apiRequest(`/reporter/${address}/stats`);
+}
+
+/**
+ * Update threat status
+ * @param {string} hash - bytes32 threat hash
+ * @param {number} status - 0=ACTIVE, 1=RESOLVED, 2=DISPUTED
+ */
+async function updateThreatStatus(hash, status) {
+  return apiRequest(`/threat/${hash}/status`, 'PUT', { status });
+}
+
 // Export API functions
 window.DCTIN_API = {
   checkHealth,
@@ -104,5 +121,7 @@ window.DCTIN_API = {
   reportThreatAI,
   getAIStatus,
   checkThreatExists,
-  reportThreatBatch
+  reportThreatBatch,
+  getReporterStats,
+  updateThreatStatus
 };
