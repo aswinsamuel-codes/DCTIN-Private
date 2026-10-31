@@ -5,16 +5,37 @@
 
 const API_BASE_URL = 'http://localhost:3000';
 
+const API_KEY_STORAGE = 'dctin_api_key';
+
+/**
+ * Read the admin API key for this browser tab (asks once, kept in sessionStorage)
+ */
+function getApiKey(forcePrompt = false) {
+  let key = null;
+  try { key = sessionStorage.getItem(API_KEY_STORAGE); } catch {}
+  if (!key || forcePrompt) {
+    key = prompt('Enter the DCTIN admin API key to submit threats:');
+    if (key) {
+      try { sessionStorage.setItem(API_KEY_STORAGE, key); } catch {}
+    }
+  }
+  return key;
+}
+
 /**
  * Make API request
  */
-async function apiRequest(endpoint, method = 'GET', body = null) {
+async function apiRequest(endpoint, method = 'GET', body = null, apiKey = null) {
   const options = {
     method,
     headers: {
       'Content-Type': 'application/json'
     }
   };
+
+  if (apiKey) {
+    options.headers['X-API-Key'] = apiKey;
+  }
 
   if (body) {
     options.body = JSON.stringify(body);
@@ -69,7 +90,12 @@ async function analyzeUrl(url) {
  * Report threat with AI validation
  */
 async function reportThreatAI(url) {
-  return apiRequest('/report-threat-ai', 'POST', { url });
+  let result = await apiRequest('/report-threat-ai', 'POST', { url }, getApiKey());
+  // Wrong or expired key: ask again once
+  if (result.status === 401) {
+    result = await apiRequest('/report-threat-ai', 'POST', { url }, getApiKey(true));
+  }
+  return result;
 }
 
 /**

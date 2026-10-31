@@ -339,6 +339,28 @@ body {
   border: 2px solid var(--gray-200);
 }
 
+/* 4-level classification styles */
+.analysis-result.SAFE {
+  background: #f0fdf4;
+  border-color: #10b981;
+}
+
+.analysis-result.SUSPICIOUS {
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+
+.analysis-result.HIGH_RISK {
+  background: #fff7ed;
+  border-color: #f97316;
+}
+
+.analysis-result.PHISHING {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+
+/* Legacy styles for backward compatibility */
 .analysis-result.threat {
   background: #fef2f2;
   border-color: var(--danger);
@@ -366,13 +388,35 @@ body {
   text-transform: uppercase;
 }
 
+/* 4-Level Classification System */
+.classification.SAFE {
+  background: #10b981;
+  color: white;
+}
+
+.classification.SUSPICIOUS {
+  background: #f59e0b;
+  color: #78350f;
+}
+
+.classification.HIGH_RISK {
+  background: #f97316;
+  color: white;
+}
+
+.classification.PHISHING {
+  background: #ef4444;
+  color: white;
+}
+
+/* Legacy class names for backward compatibility */
 .classification.safe {
-  background: var(--success);
+  background: #10b981;
   color: white;
 }
 
 .classification.phishing {
-  background: var(--danger);
+  background: #ef4444;
   color: white;
 }
 

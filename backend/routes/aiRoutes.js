@@ -6,6 +6,7 @@ import {
   getAIStatus,
   updateThreshold
 } from '../controllers/aiController.js';
+import { requireApiKey } from '../middleware/requireApiKey.js';
 
 const router = express.Router();
 
@@ -29,9 +30,9 @@ router.post('/analyze-urls-batch', analyzeUrlsBatch);
  * @route   POST /report-threat-ai
  * @desc    Report threat with AI validation (analyzes then submits to blockchain)
  * @body    { url: string, skipValidation?: boolean }
- * @access  Public
+ * @access  Admin (X-API-Key header)
  */
-router.post('/report-threat-ai', reportThreatWithAI);
+router.post('/report-threat-ai', requireApiKey, reportThreatWithAI);
 
 /**
  * @route   GET /ai-status
@@ -44,8 +45,8 @@ router.get('/ai-status', getAIStatus);
  * @route   PUT /ai-threshold
  * @desc    Update AI confidence threshold
  * @body    { threshold: number (0-1) }
- * @access  Admin only (in production)
+ * @access  Admin (X-API-Key header)
  */
-router.put('/ai-threshold', updateThreshold);
+router.put('/ai-threshold', requireApiKey, updateThreshold);
 
 export default router;

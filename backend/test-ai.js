@@ -13,7 +13,8 @@ function makeRequest(path, method, data = null) {
       path: path,
       method: method,
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-API-Key': process.env.ADMIN_API_KEY || ''
       }
     };
 

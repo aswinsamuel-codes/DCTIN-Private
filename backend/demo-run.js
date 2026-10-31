@@ -24,7 +24,7 @@ function makeRequest(path, method, data = null) {
       port: API_PORT,
       path: path,
       method: method,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': process.env.ADMIN_API_KEY || '' }
     };
 
     const req = http.request(options, (res) => {

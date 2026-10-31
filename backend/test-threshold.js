@@ -7,7 +7,7 @@ function makeRequest(path, method, data = null) {
       port: 3000,
       path: path,
       method: method,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': process.env.ADMIN_API_KEY || '' }
     };
 
     const req = http.request(options, (res) => {

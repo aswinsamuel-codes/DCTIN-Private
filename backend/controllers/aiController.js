@@ -1,5 +1,6 @@
 import { analyzeURL, analyzeBatch, validateForReporting, getEngineStatus } from '../ai-engine/detector.js';
 import * as blockchainService from '../services/blockchainService.js';
+import { ethers } from 'ethers';
 
 /**
  * Analyze URL for threats (non-blocking, test endpoint)
@@ -27,7 +28,7 @@ export async function analyzeUrl(req, res) {
       analysis: {
         threat: analysis.threat,
         confidence: analysis.confidence,
-        type: analysis.type,
+        classification: analysis.classification,
         threatType: analysis.threatType,
         reasons: analysis.reasons,
         analysisTimeMs: analysis.analysisTimeMs
@@ -131,7 +132,7 @@ export async function reportThreatWithAI(req, res) {
         error: 'AI Validation Failed',
         message: validation.reason,
         analysis: validation.analysis,
-        suggestion: 'Use skipValidation: true to bypass (admin only)'
+        suggestion: 'Use skipValidation: true to bypass'
       });
     }
     
@@ -139,7 +140,7 @@ export async function reportThreatWithAI(req, res) {
     console.log('[BLOCKCHAIN] Submitting validated threat to blockchain...');
     
     const threatData = validation.valid ? validation.threatData : {
-      hash: require('ethers').id(url),
+      hash: ethers.id(url),
       type: 7, // SUSPICIOUS_DOMAIN
       originalUrl: url
     };

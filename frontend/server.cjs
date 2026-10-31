@@ -35,8 +35,22 @@ const server = http.createServer((req, res) => {
   }
 
   // Default to index.html
-  let filePath = req.url === '/' ? '/index.html' : req.url;
-  filePath = path.join(PUBLIC_DIR, filePath);
+  // Strip query string, decode, and resolve inside PUBLIC_DIR to block path traversal (e.g. /../backend/.env)
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  } catch {
+    res.writeHead(400);
+    res.end('Bad Request');
+    return;
+  }
+  if (urlPath === '/') urlPath = '/index.html';
+  const filePath = path.resolve(PUBLIC_DIR, '.' + urlPath);
+  if (!filePath.startsWith(PUBLIC_DIR + path.sep)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
 
   const extname = String(path.extname(filePath)).toLowerCase();
   const contentType = MIME_TYPES[extname] || 'application/octet-stream';

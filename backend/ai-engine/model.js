@@ -34,12 +34,13 @@ const FEATURE_WEIGHTS = {
 };
 
 /**
- * Classification thresholds
+ * Classification thresholds for 4-level system
  */
 const THRESHOLDS = {
-  SAFE: 0.3,        // Below this: definitely safe
-  SUSPICIOUS: 0.5,  // Below this: suspicious but not confirmed
-  PHISHING: 0.8     // Above this: high confidence phishing
+  PHISHING: 0.85,   // High confidence phishing
+  HIGH_RISK: 0.65,  // Elevated risk - likely malicious
+  SUSPICIOUS: 0.40, // Some suspicious indicators
+  SAFE: 0.0         // Below this: safe
 };
 
 /**
@@ -95,23 +96,28 @@ export function classifyURL(url) {
     // Get explanations for suspicious features
     const explanations = getFeatureExplanations(features);
     
-    // Determine classification
-    let isThreat = false;
+    // Determine classification using 4-level system
     let classification = 'SAFE';
-    let confidence = 1 - score;
+    let isThreat = false;
     
-    if (score >= THRESHOLDS.PHISHING) {
+    if (score >= 0.85) {
       isThreat = true;
       classification = 'PHISHING';
-      confidence = score;
-    } else if (score >= THRESHOLDS.SUSPICIOUS) {
+    } else if (score >= 0.65) {
+      isThreat = true;
+      classification = 'HIGH_RISK';
+    } else if (score >= 0.40) {
+      isThreat = true;
       classification = 'SUSPICIOUS';
-      confidence = 0.5 + (score - THRESHOLDS.SUSPICIOUS);
     } else {
-      confidence = 1 - score;
+      isThreat = false;
+      classification = 'SAFE';
     }
     
-    return createResult(isThreat, confidence, classification, features, explanations);
+    console.log('Score:', score);
+    console.log('Classification:', classification);
+    
+    return createResult(isThreat, score, classification, features, explanations);
     
   } catch (error) {
     console.error('❌ Classification error:', error);
@@ -199,11 +205,20 @@ function checkBlacklist(url) {
  * @returns {Object} Result object
  */
 function createResult(isThreat, confidence, classification, features, reasons) {
+  // Map classification to threat type for blockchain
+  const threatTypeMap = {
+    'PHISHING': 'PHISHING_URL',
+    'HIGH_RISK': 'SUSPICIOUS_DOMAIN',
+    'SUSPICIOUS': 'SUSPICIOUS_DOMAIN',
+    'SAFE': null
+  };
+  
   return {
     threat: isThreat,
     confidence: Math.round(confidence * 100) / 100,
+    classification: classification,
     type: classification,
-    threatType: isThreat ? 'PHISHING_URL' : null,
+    threatType: threatTypeMap[classification],
     features: features ? {
       domainLength: features.domainLength,
       hasIPAddress: features.hasIPAddress,

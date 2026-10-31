@@ -7,6 +7,7 @@ import {
   threatExists,
   getStats
 } from '../controllers/threatController.js';
+import { requireApiKey } from '../middleware/requireApiKey.js';
 
 const router = express.Router();
 
@@ -14,8 +15,9 @@ const router = express.Router();
  * @route   POST /report-threat
  * @desc    Report a new threat to the blockchain
  * @body    { hash: string, type: number }
+ * @access  Admin (X-API-Key header)
  */
-router.post('/report-threat', reportThreat);
+router.post('/report-threat', requireApiKey, reportThreat);
 
 /**
  * @route   GET /threat/:hash

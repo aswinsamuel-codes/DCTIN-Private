@@ -124,7 +124,7 @@ async function loadLatestThreats() {
       <div class="threat-item ${getThreatClass(threat.threatType)}">
         <div class="threat-info">
           <span class="threat-type">${THREAT_TYPES[threat.threatType] || 'Unknown'}</span>
-          <span class="threat-hash">${truncateHash(threat.threatHash)}</span>
+          <span class="threat-hash">${escapeHtml(truncateHash(threat.threatHash))}</span>
         </div>
         <span class="threat-time">${formatTimestamp(threat.timestamp)}</span>
       </div>
@@ -205,14 +205,15 @@ async function analyzeURL(url) {
   
   if (result.success) {
     const analysis = result.data.analysis;
-    const isThreat = analysis.threat;
+    const classification = escapeHtml(analysis.classification || analysis.type || 'SAFE');
     const confidence = analysis.confidence;
+    const isThreat = analysis.threat;
     
     resultContainer.innerHTML = `
-      <div class="analysis-result ${isThreat ? 'threat' : 'safe'}">
+      <div class="analysis-result ${classification}">
         <div class="result-header">
-          <span class="classification ${isThreat ? 'phishing' : 'safe'}">
-            ${analysis.type}
+          <span class="classification ${classification}">
+            ${classification}
           </span>
           <span class="confidence ${confidence > 0.8 ? 'high' : confidence > 0.5 ? 'medium' : 'low'}">
             Confidence: ${(confidence * 100).toFixed(1)}%
@@ -220,14 +221,14 @@ async function analyzeURL(url) {
         </div>
         
         <div class="result-details">
-          <p><strong>URL:</strong> ${url}</p>
-          <p><strong>Threat Type:</strong> ${analysis.threatType || 'N/A'}</p>
+          <p><strong>URL:</strong> ${escapeHtml(url)}</p>
+          <p><strong>Classification:</strong> ${classification}</p>
           
           ${analysis.reasons?.length > 0 ? `
             <div class="reasons">
               <strong>Detection Reasons:</strong>
               <ul>
-                ${analysis.reasons.map(r => `<li>${r}</li>`).join('')}
+                ${analysis.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
               </ul>
             </div>
           ` : ''}
@@ -235,14 +236,14 @@ async function analyzeURL(url) {
           <p><strong>Analysis Time:</strong> ${result.data.analysis?.analysisTimeMs || '-'}ms</p>
         </div>
         
-        ${isThreat && confidence >= 0.8 ? `
+        ${classification === 'PHISHING' ? `
           <button id="report-btn" class="btn primary report-btn">
             📤 Report to Blockchain
           </button>
-        ` : isThreat ? `
+        ` : ['HIGH_RISK', 'SUSPICIOUS'].includes(classification) ? `
           <div class="warning-box">
-            ⚠️ Threat detected but confidence (${(confidence * 100).toFixed(1)}%) is below threshold (80%).
-            Not submitted to blockchain.
+            ⚠️ ${classification} URL detected (confidence: ${(confidence * 100).toFixed(1)}%).
+            Only PHISHING-level threats are submitted to blockchain.
           </div>
         ` : `
           <div class="success-box">
@@ -260,7 +261,7 @@ async function analyzeURL(url) {
   } else {
     resultContainer.innerHTML = `
       <div class="error-box">
-        ❌ Analysis failed: ${result.data.error || 'Unknown error'}
+        ❌ Analysis failed: ${escapeHtml(result.data?.error || result.error || 'Unknown error')}
       </div>
     `;
   }
@@ -286,19 +287,19 @@ async function reportToBlockchain(url) {
         <div class="tx-details">
           <div class="tx-row">
             <span class="tx-label">Transaction Hash:</span>
-            <span class="tx-value mono">${bc.transactionHash}</span>
+            <span class="tx-value mono">${escapeHtml(bc.transactionHash)}</span>
           </div>
           <div class="tx-row">
             <span class="tx-label">Block Number:</span>
-            <span class="tx-value">${bc.blockNumber}</span>
+            <span class="tx-value">${escapeHtml(bc.blockNumber)}</span>
           </div>
           <div class="tx-row">
             <span class="tx-label">Gas Used:</span>
-            <span class="tx-value">${bc.gasUsed}</span>
+            <span class="tx-value">${escapeHtml(bc.gasUsed)}</span>
           </div>
           <div class="tx-row">
             <span class="tx-label">Threat Hash:</span>
-            <span class="tx-value mono">${bc.threatHash}</span>
+            <span class="tx-value mono">${escapeHtml(bc.threatHash)}</span>
           </div>
         </div>
       </div>
@@ -309,7 +310,7 @@ async function reportToBlockchain(url) {
   } else {
     blockchainContainer.innerHTML = `
       <div class="error-box">
-        ❌ Blockchain submission failed: ${result.data.message || result.data.error}
+        ❌ Blockchain submission failed: ${escapeHtml(result.data?.message || result.data?.error || result.error)}
       </div>
     `;
     reportBtn.disabled = false;
@@ -338,7 +339,8 @@ async function loadThreats() {
   const result = await DCTIN_API.getThreats(state.currentPage, state.threatsPerPage);
   
   if (result.success) {
-    let threats = result.data.threats || [];
+    // API returns threats directly in data array: { success: true, data: [] }
+    let threats = Array.isArray(result.data) ? result.data : (result.data.threats || []);
     
     // Apply type filter if selected
     if (typeFilter) {
@@ -348,25 +350,27 @@ async function loadThreats() {
     state.threats = threats;
     
     if (threats.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty">No threats found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">No threats recorded yet</td></tr>';
     } else {
       tbody.innerHTML = threats.map(threat => `
         <tr class="${getThreatClass(threat.threatType)}">
-          <td class="mono" title="${threat.threatHash}">${truncateHash(threat.threatHash, 16)}</td>
+          <td class="mono" title="${escapeHtml(threat.threatHash)}">${escapeHtml(truncateHash(threat.threatHash, 16))}</td>
           <td><span class="type-badge type-${threat.threatType}">${THREAT_TYPES[threat.threatType] || 'Unknown'}</span></td>
-          <td class="mono">${truncateHash(threat.reporter, 10)}</td>
+          <td class="mono">${escapeHtml(truncateHash(threat.reporter, 10))}</td>
           <td>${formatTimestamp(threat.timestamp)}</td>
         </tr>
       `).join('');
     }
     
-    // Update pagination
-    const totalPages = Math.ceil((result.data.total || 0) / state.threatsPerPage);
+    // Update pagination - use array length as total
+    const totalCount = Array.isArray(result.data) ? result.data.length : (result.data.total || 0);
+    const totalPages = Math.ceil(totalCount / state.threatsPerPage);
     document.getElementById('page-info').textContent = `Page ${state.currentPage} of ${totalPages || 1}`;
     document.getElementById('prev-page').disabled = state.currentPage <= 1;
     document.getElementById('next-page').disabled = state.currentPage >= totalPages;
   } else {
-    tbody.innerHTML = `<tr><td colspan="4" class="error">Error loading threats: ${result.error}</td></tr>`;
+    const errorMsg = result.error || (result.data?.error) || 'Failed to load threats';
+    tbody.innerHTML = `<tr><td colspan="4" class="error">Error loading threats: ${escapeHtml(errorMsg)}</td></tr>`;
   }
 }
 
@@ -378,6 +382,17 @@ function changePage(direction) {
 }
 
 // Utility functions
+
+// Escape untrusted text before inserting it with innerHTML (prevents XSS from analyzed URLs or API data)
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function truncateHash(hash, length = 8) {
   if (!hash) return 'N/A';
   if (hash.length <= length * 2 + 2) return hash;

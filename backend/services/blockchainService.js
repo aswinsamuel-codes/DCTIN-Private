@@ -291,11 +291,11 @@ function getThreatTypeName(type) {
   const types = {
     0: 'MALWARE',
     1: 'PHISHING_URL',
-    2: 'C2_SERVER',
-    3: 'DATA_EXFILTRATION',
-    4: 'RANSOMWARE',
-    5: 'BOTNET_NODE',
-    6: 'ANOMALOUS_BEHAVIOR',
+    2: 'MALICIOUS_IP',
+    3: 'C2_SERVER',
+    4: 'BOTNET_NODE',
+    5: 'RANSOMWARE',
+    6: 'EXPLOIT_PAYLOAD',
     7: 'SUSPICIOUS_DOMAIN'
   };
   return types[type] || 'UNKNOWN';

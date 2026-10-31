@@ -12,6 +12,7 @@ const options = {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
+    'X-API-Key': process.env.ADMIN_API_KEY || '',
     'Content-Length': Buffer.byteLength(testData)
   }
 };
